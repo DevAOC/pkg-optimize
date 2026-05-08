@@ -1,0 +1,72 @@
+{
+  "name": "pkg-optimize",
+  "version": "0.1.0",
+  "description": "Zero-config tree-shaker for any npm package whose files are independently importable. Prunes unused files from one or more target packages based on what your source code actually references — generated SDK clients, codegen output, and general-purpose libraries alike.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./presets/*": "./dist/presets/*.json"
+  },
+  "bin": {
+    "pkg-optimize": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm run test"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": [
+    "tree-shaking",
+    "pruning",
+    "node-modules",
+    "bundle-size",
+    "codegen",
+    "sdk",
+    "client",
+    "lodash",
+    "date-fns",
+    "react-icons",
+    "apollo",
+    "trpc",
+    "urql",
+    "relay",
+    "react-query",
+    "graphql",
+    "openapi"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@babel/parser": "^7.24.0",
+    "@babel/traverse": "^7.24.0",
+    "@babel/types": "^7.24.0",
+    "ajv": "^8.12.0",
+    "chokidar": "^3.6.0",
+    "lodash.debounce": "^4.0.8",
+    "picocolors": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/babel__traverse": "^7.20.0",
+    "@types/lodash.debounce": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.5"
+  }
+}

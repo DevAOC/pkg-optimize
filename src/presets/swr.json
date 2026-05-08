@@ -1,0 +1,21 @@
+{
+  "patterns": {
+    "namespace": "fetchers",
+    "accessStyle": "member",
+    "depth": { "member": 1, "operation": 2 },
+    "hooks": [
+      { "name": "useSWR", "argIndex": 1, "argStyle": "imported-identifier" },
+      { "name": "useSWRImmutable", "argIndex": 1, "argStyle": "imported-identifier" },
+      { "name": "useSWRMutation", "argIndex": 1, "argStyle": "imported-identifier" },
+      { "name": "useSWRInfinite", "argIndex": 1, "argStyle": "imported-identifier" },
+      { "name": "useSWRSubscription", "argIndex": 1, "argStyle": "imported-identifier" }
+    ]
+  },
+  "packageStructure": {
+    "layout": "flat",
+    "memberDir": "fetchers",
+    "naming": "camelCase",
+    "extensions": [".js", ".d.ts", ".ts"],
+    "preserve": ["index.js", "index.d.ts", "index.ts", "package.json"]
+  }
+}

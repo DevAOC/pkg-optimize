@@ -1,0 +1,27 @@
+{
+  "patterns": {
+    "namespace": "relay",
+    "accessStyle": "member",
+    "depth": { "member": 1, "operation": 2 },
+    "hooks": [
+      { "name": "useLazyLoadQuery", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "usePreloadedQuery", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useQueryLoader", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useFragment", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useRefetchableFragment", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "usePaginationFragment", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useMutation", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useSubscription", "argIndex": 0, "argStyle": "object-property-identifier", "objectProperty": "subscription" },
+      { "name": "loadQuery", "argIndex": 1, "argStyle": "imported-identifier" },
+      { "name": "fetchQuery", "argIndex": 1, "argStyle": "imported-identifier" },
+      { "name": "commitMutation", "argIndex": 1, "argStyle": "object-property-identifier", "objectProperty": "mutation" }
+    ]
+  },
+  "packageStructure": {
+    "layout": "flat",
+    "memberDir": "__generated__",
+    "naming": "PascalCase",
+    "extensions": [".graphql.ts", ".graphql.js", ".graphql.d.ts", ".js", ".d.ts"],
+    "preserve": ["index.js", "index.d.ts", "index.ts", "package.json"]
+  }
+}

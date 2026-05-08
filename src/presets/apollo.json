@@ -1,0 +1,27 @@
+{
+  "patterns": {
+    "namespace": "client",
+    "accessStyle": "member",
+    "depth": { "member": 1, "operation": 2 },
+    "hooks": [
+      { "name": "useQuery", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useQuery", "argIndex": 0, "argStyle": "string" },
+      { "name": "useLazyQuery", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useLazyQuery", "argIndex": 0, "argStyle": "string" },
+      { "name": "useSuspenseQuery", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useBackgroundQuery", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useReadQuery", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useMutation", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useMutation", "argIndex": 0, "argStyle": "string" },
+      { "name": "useSubscription", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useFragment", "argIndex": 0, "argStyle": "object-property-identifier", "objectProperty": "fragment" }
+    ]
+  },
+  "packageStructure": {
+    "layout": "flat",
+    "memberDir": "operations",
+    "naming": "kebab-case",
+    "extensions": [".js", ".d.ts", ".ts"],
+    "preserve": ["index.js", "index.d.ts", "index.ts", "package.json"]
+  }
+}

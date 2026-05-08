@@ -1,0 +1,13 @@
+{
+  "patterns": {
+    "accessStyle": "destructure",
+    "depth": { "member": 1, "operation": 2 }
+  },
+  "packageStructure": {
+    "layout": "destructure",
+    "memberDir": ".",
+    "naming": "PascalCase",
+    "extensions": [".js", ".mjs", ".d.ts"],
+    "preserve": ["index.js", "index.mjs", "index.d.ts", "package.json"]
+  }
+}

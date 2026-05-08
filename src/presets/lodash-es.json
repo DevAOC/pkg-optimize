@@ -1,0 +1,14 @@
+{
+  "patterns": {
+    "namespace": "_",
+    "accessStyle": "destructure",
+    "depth": { "member": 1, "operation": 2 }
+  },
+  "packageStructure": {
+    "layout": "destructure",
+    "memberDir": ".",
+    "naming": "camelCase",
+    "extensions": [".js", ".d.ts"],
+    "preserve": ["index.js", "index.d.ts", "package.json", "README.md", "LICENSE"]
+  }
+}

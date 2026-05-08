@@ -1,0 +1,14 @@
+{
+  "patterns": {
+    "namespace": "dateFns",
+    "accessStyle": "destructure",
+    "depth": { "member": 1, "operation": 2 }
+  },
+  "packageStructure": {
+    "layout": "destructure",
+    "memberDir": ".",
+    "naming": "camelCase",
+    "extensions": [".js", ".mjs", ".cjs", ".d.ts"],
+    "preserve": ["index.js", "index.mjs", "index.d.ts", "package.json", "README.md", "LICENSE"]
+  }
+}

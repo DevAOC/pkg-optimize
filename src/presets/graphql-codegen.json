@@ -1,0 +1,20 @@
+{
+  "patterns": {
+    "namespace": "graphql",
+    "accessStyle": "member",
+    "depth": { "member": 1, "operation": 2 },
+    "hooks": [
+      { "name": "useQuery", "argIndex": 0, "argStyle": "object-property-identifier", "objectProperty": "query" },
+      { "name": "useMutation", "argIndex": 0, "argStyle": "imported-identifier" },
+      { "name": "useSubscription", "argIndex": 0, "argStyle": "object-property-identifier", "objectProperty": "query" },
+      { "name": "useFragment", "argIndex": 0, "argStyle": "imported-identifier" }
+    ]
+  },
+  "packageStructure": {
+    "layout": "flat",
+    "memberDir": "operations",
+    "naming": "PascalCase",
+    "extensions": [".js", ".d.ts", ".ts"],
+    "preserve": ["index.js", "index.d.ts", "index.ts", "graphql.ts", "package.json"]
+  }
+}
