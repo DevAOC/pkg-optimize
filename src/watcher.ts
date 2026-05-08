@@ -65,8 +65,19 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
 
     const watcher = chokidar
       .watch(packageDir, { ignoreInitial: true, ignored: /\.pkg-optimize-cache/ })
-      .on('all', () => {
-        const reprimed = cache.reprime();
+      .on('all', (event) => {
+        // `add`/`unlink`/`addDir`/`unlinkDir` mean the file *set* changed —
+        // the only thing the pruner cares about. That's the signal a tool
+        // like `ggt` or graphql-codegen produces when it regenerates a model
+        // inside a linked package, *without* bumping `package.json`'s mtime.
+        // `change` is an in-place content edit and the existing fast path
+        // (mtime on `package.json`) is fine for that case.
+        const fileSetChanged =
+          event === 'add' ||
+          event === 'unlink' ||
+          event === 'addDir' ||
+          event === 'unlinkDir';
+        const reprimed = cache.reprime({ force: fileSetChanged });
         if (reprimed) {
           log.info(`[${pkg.targetPackage}] package changed externally — re-priming cache`);
           packagePruners.get(pkg.targetPackage)?.('package updated');

@@ -35,27 +35,36 @@ export class ShakerCache {
   /**
    * Re-prime when the package has changed externally. Returns `true` if a
    * re-copy happened, `false` if nothing changed.
+   *
+   * By default this uses a fast mtime check on `package.json`, which is the
+   * right signal for "the package was reinstalled" (npm/yarn always rewrites
+   * `package.json` on install). Pass `{ force: true }` to bypass that check —
+   * the watcher uses this when chokidar reports an `add`/`unlink` event,
+   * because tools like `ggt`, graphql-codegen, etc. regenerate files inside
+   * a linked package without touching its `package.json`.
    */
-  reprime(): boolean {
+  reprime(opts?: { force?: boolean }): boolean {
     if (!this.livePackageExists()) return false;
 
-    const livePkgJson = resolve(this.packageDir, 'package.json');
-    const cachedPkgJson = resolve(this.cachedPackageDir, 'package.json');
+    if (!opts?.force) {
+      const livePkgJson = resolve(this.packageDir, 'package.json');
+      const cachedPkgJson = resolve(this.cachedPackageDir, 'package.json');
 
-    let liveMtime = 0;
-    let cacheMtime = 0;
-    try {
-      liveMtime = statSync(livePkgJson).mtimeMs;
-    } catch {
-      return false;
-    }
-    try {
-      cacheMtime = statSync(cachedPkgJson).mtimeMs;
-    } catch {
-      cacheMtime = 0;
-    }
+      let liveMtime = 0;
+      let cacheMtime = 0;
+      try {
+        liveMtime = statSync(livePkgJson).mtimeMs;
+      } catch {
+        return false;
+      }
+      try {
+        cacheMtime = statSync(cachedPkgJson).mtimeMs;
+      } catch {
+        cacheMtime = 0;
+      }
 
-    if (liveMtime <= cacheMtime) return false;
+      if (liveMtime <= cacheMtime) return false;
+    }
 
     rmSync(this.cachedPackageDir, { recursive: true, force: true });
     mkdirSync(this.cachedPackageDir, { recursive: true });
