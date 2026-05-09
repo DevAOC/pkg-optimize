@@ -188,6 +188,63 @@ test + build) — nothing ships if `main` is red. Contributors **do not**
 need to bump versions or edit `CHANGELOG.md` themselves; both are
 generated from the changesets.
 
+## Verifying the published artifacts
+
+If your PR changes any of the following, you should verify locally that the
+published tarball is correct **before** merging — these regressions are easy
+to miss in CI and painful to roll back from npm:
+
+- `tsup.config.ts` or anything else that affects `dist/`
+- The `files`, `exports`, `bin`, or `main`/`module`/`types` fields in
+  `package.json`
+- The preset-copy step (anything under `src/presets/` or the `onSuccess`
+  hook in `tsup.config.ts`)
+
+Two-step check:
+
+1. **Inspect what would be published**:
+
+   ```bash
+   npm publish --dry-run
+   ```
+
+   This runs `prepublishOnly` (build + test), prints the final tarball
+   contents, and runs npm's publish-time validations — without uploading.
+   Eyeball the file list and confirm it matches what you intended (no
+   `tests/`, no source maps you didn't want shipped, all expected presets
+   present under `dist/presets/`, `CHANGELOG.md` included once it exists,
+   etc.).
+
+2. **End-to-end smoke test against a real install**:
+
+   ```bash
+   # in the pkg-optimize repo
+   npm pack
+   # → creates pkg-optimize-<version>.tgz
+
+   # in a separate scratch project
+   npm install /absolute/path/to/pkg-optimize-<version>.tgz
+   npx pkg-optimize --version
+   ```
+
+   This catches issues that `--dry-run` cannot: a broken `bin` shebang,
+   ESM/CJS resolution surprises, missing files referenced from runtime
+   code, or `dist/presets/*.json` not actually being copied into the
+   tarball. Doing this once before a release-affecting PR merges is much
+   cheaper than yanking a bad version from npm.
+
+### Pre-release versions (e.g. `next` tag)
+
+For risky releases that need community testing before going to `latest`,
+Changesets supports a [pre-release mode][cs-pre] that publishes under a
+dist-tag like `next` or `beta`. We don't have it configured by default —
+opt in by adding a `pre.json` with `npx changeset pre enter next` on a
+release branch, merging changesets, then `pre exit` once stable. Holler
+in your PR if you think a change warrants this and we'll set it up
+together.
+
+[cs-pre]: https://github.com/changesets/changesets/blob/main/docs/prereleases.md
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the
