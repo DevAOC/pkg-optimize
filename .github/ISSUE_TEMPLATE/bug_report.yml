@@ -1,0 +1,93 @@
+name: Bug report
+description: Report incorrect pruning, broken restore, scanner missing a pattern, or any other unexpected behavior.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        Before submitting, please:
+        - Search [existing issues](https://github.com/DevAOC/pkg-optimize/issues?q=is%3Aissue) — even closed ones — to see if this is already reported or fixed in `main`.
+        - For **security issues**, do *not* open a public issue. See [`SECURITY.md`](https://github.com/DevAOC/pkg-optimize/blob/main/SECURITY.md).
+
+  - type: input
+    id: version
+    attributes:
+      label: pkg-optimize version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: Output of `node --version`.
+      placeholder: "v22.11.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 14.5 / Ubuntu 24.04 / Windows 11"
+
+  - type: input
+    id: target-package
+    attributes:
+      label: Target package(s)
+      description: The npm package(s) you were running pkg-optimize against when the bug happened.
+      placeholder: "@shopify/admin-api-client, lodash-es"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: |
+        A minimal config plus a small piece of source code that triggers the bug. Pasting your `pkg-optimize.config.{js,json}` and one file's worth of relevant `import`s is usually enough.
+
+        If the bug only reproduces with a specific layout under `node_modules`, describe that layout — a `tree -L 3 node_modules/<pkg>` output is ideal.
+      render: typescript
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: pkg-optimize output
+      description: The full warning/error output from pkg-optimize. Paste raw — GitHub will format it.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened?
+      description: Include any files that were wrongly removed or wrongly kept, and any runtime errors triggered by the pruning.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I have searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am running a [supported Node.js version](https://github.com/DevAOC/pkg-optimize/blob/main/README.md#requirements) (Node 22 or newer).
+          required: true
+        - label: I agree to follow this project's [Code of Conduct](https://github.com/DevAOC/pkg-optimize/blob/main/CODE_OF_CONDUCT.md).
+          required: true

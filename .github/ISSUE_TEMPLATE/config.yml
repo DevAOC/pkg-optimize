@@ -1,0 +1,19 @@
+# Force contributors to pick a structured template — dramatically improves
+# the signal-to-noise ratio of issues and the time-to-triage.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/DevAOC/pkg-optimize/security/advisories/new
+    about: |
+      Please don't open a public issue for security reports. Use GitHub's
+      private vulnerability reporting flow — see SECURITY.md for details
+      and the email fallback.
+
+  - name: Read the contributing guide
+    url: https://github.com/DevAOC/pkg-optimize/blob/main/CONTRIBUTING.md
+    about: Project layout, code style, and the changeset workflow.
+
+  - name: Code of Conduct
+    url: https://github.com/DevAOC/pkg-optimize/blob/main/CODE_OF_CONDUCT.md
+    about: How we expect everyone to interact in this project's spaces.

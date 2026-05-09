@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+# Serialize release runs so two pushes to main can't race the
+# "Version Packages" PR or the publish step.
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  # Hard gate: same checks as PR CI. If anything fails the `release`
+  # job below is skipped, so nothing can be published on a red main.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Release
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # push the "Version Packages" branch + create GitHub releases
+      pull-requests: write  # open/update the "Version Packages" PR
+      id-token: write       # npm provenance attestations
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Changesets needs full git history to compute changelogs.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # When there are unconsumed changesets in `.changeset/`, this
+      # opens or updates a "Version Packages" PR.
+      # When there are none (because that PR was just merged), it runs
+      # `npm run release` which publishes the new version to npm.
+      - name: Create Release Pull Request or Publish
+        uses: changesets/action@v1
+        with:
+          version: npm run version-packages
+          publish: npm run release
+          commit: 'chore: version packages'
+          title: 'chore: version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
