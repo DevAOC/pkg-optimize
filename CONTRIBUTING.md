@@ -10,6 +10,10 @@ Be kind, be specific, assume good faith. Bug reports, design pushback, and
 "this is confusing" feedback are all welcome — sharp opinions are fine, sharp
 words at people are not.
 
+The full version of what we hold ourselves to is in
+[`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) (Contributor Covenant 2.1),
+which also covers how to report violations privately.
+
 ## Getting set up
 
 You need **Node.js 22 or newer** (Node 22 LTS or Node 24 LTS). The project

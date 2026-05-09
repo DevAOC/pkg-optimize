@@ -8,6 +8,8 @@ Zero-config tree-shaker for **any npm package** whose files are independently im
 - **Watch mode** — re-prunes when source, packages, or config change.
 - **Fifteen built-in presets** for common libraries and codegen tools.
 
+> **Found a security issue?** Please report it privately — see [`SECURITY.md`](./SECURITY.md). Don't open a public issue or PR for vulnerability reports.
+
 ## What can it prune?
 
 The scanner picks up usage from **all** of these patterns, so anything written in idiomatic JS/TS works:
