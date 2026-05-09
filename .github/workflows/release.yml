@@ -40,6 +40,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Build before invoking changesets so `dist/cli.js` (referenced by
+      # the `bin` field in package.json) exists when npm reads the
+      # manifest. Without this, npm emits "No bin file found at
+      # dist/cli.js" during publish, which `@changesets/cli` surfaces as
+      # an error. `prepublishOnly` is kept as a safety net but isn't
+      # sufficient on its own because the warning fires during the
+      # metadata read that happens before publish lifecycle scripts.
+      - name: Build
+        run: npm run build
+
       # When there are unconsumed changesets in `.changeset/`, this
       # opens or updates a "Version Packages" PR.
       # When there are none (because that PR was just merged), it runs

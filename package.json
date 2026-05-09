@@ -6,6 +6,10 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DevAOC/pkg-optimize"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
