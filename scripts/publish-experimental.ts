@@ -26,6 +26,7 @@ Please commit or stash them before publishing
     process.exit(1);
   }
 
+  await assertNpmAuth();
   await step("Installing dependencies", "npm", ["ci"]);
   await step("Linting", "npm", ["run", "lint"]);
   await step("Testing", "npm", ["run", "test"]);
@@ -45,6 +46,20 @@ Please commit or stash them before publishing
     await run("npm", ["publish", "--tag", "experimental"], { stdio: "inherit" });
   } finally {
     await run("git", ["checkout", "package.json"]);
+  }
+}
+
+async function assertNpmAuth() {
+  try {
+    await run("npm", ["whoami", "--registry", "https://registry.npmjs.org"], {
+      capture: true,
+    });
+  } catch {
+    throw new Error(`
+You are not logged in to npm
+
+Run \`npm login\` or \`npm adduser\`, then retry \`npm run release:experimental\`.
+`);
   }
 }
 
@@ -89,4 +104,9 @@ function run(
   });
 }
 
-await main();
+try {
+  await main();
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+}
