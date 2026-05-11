@@ -255,7 +255,6 @@ function printVersion(): void {
   const version = process.env.PKG_OPTIMIZE_VERSION ?? "0.1.0";
   console.log(version);
 }
-
 // If this file is bundled as the package "bin" entry, `process.argv[1]` will
 // point at the built CLI file (typically `dist/cli.js`). When imported from the
 // programmatic API, it should do nothing unless `runCli()` is called.
