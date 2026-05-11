@@ -129,9 +129,6 @@ export function logVerboseRunSummary(results: PruneResult[]): void {
       r.kept.length,
     );
     for (const w of r.warnings) dbg.summary('    warn: %s', w);
-    if (r.removed.length) {
-      for (const path of r.removed) dbg.summary('    - %s', path);
-    }
   }
 }
 
@@ -147,5 +144,11 @@ export function emitResult(result: PruneResult): void {
   dbg.result(formatResultLine(result));
   for (const w of result.warnings) {
     dbg.warn('  warn: %s (%s)', w, result.packageName);
+  }
+  // Under verbose (`pkg-optimize:*`), list every file we touched so users can
+  // see exactly what disappeared from `node_modules` without diffing the cache.
+  if (dbg.summary.enabled && result.removed.length) {
+    dbg.summary('  removed files (%s):', result.packageName);
+    for (const path of result.removed) dbg.summary('    - %s', path);
   }
 }
