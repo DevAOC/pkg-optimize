@@ -14,22 +14,22 @@ Zero-config tree-shaker for **any npm package** whose files are independently im
 
 The scanner picks up usage from **all** of these patterns, so anything written in idiomatic JS/TS works:
 
-| Pattern                                            | Source example                                          | What gets recorded                                   |
-| -------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------- |
-| Named import                                       | `import { format } from 'date-fns'`                     | member `format`                                      |
-| Aliased import                                     | `import { format as f } from 'date-fns'`                | member `format` (source name)                        |
-| Default import + member access                     | `import _ from 'lodash'; _.debounce(...)`               | member `debounce`                                    |
-| Namespace import + member access                   | `import * as fs from 'date-fns'; fs.format(...)`        | member `format`                                      |
-| Deep import                                        | `import { x } from 'pkg/sub/foo'`                       | file `sub/foo`                                       |
-| Side-effect import                                 | `import 'pkg/styles.css'`                               | file `styles`                                        |
-| Dynamic import (string literal)                    | `await import('pkg/sub')`                               | file `sub`                                           |
-| Dynamic import (template prefix)                   | `` await import(`pkg/icons/${name}`) ``                 | file `icons` (entire `icons/` tree kept)             |
-| Dynamic import (whole-package or unresolvable)     | `await import('pkg')` or `import(somePathVar)`          | wildcard — pruning is **disabled** for this package  |
-| CJS require (string)                               | `require('pkg/sub')`                                    | file `sub`                                           |
-| `require.resolve`                                  | `require.resolve('pkg/sub')`                            | file `sub`                                           |
-| Namespace member access (generated SDKs)           | `api.shopProduct.update(...)`                           | member `shopProduct`, operation `shopProduct.update` |
-| Hook with imported document                        | `useQuery(GetUserDocument)`                             | member `GetUserDocument`                             |
-| Hook with options object                           | `useQuery({ query: GetUserDocument })`                  | member `GetUserDocument`                             |
+| Pattern                                        | Source example                                   | What gets recorded                                   |
+| ---------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------- |
+| Named import                                   | `import { format } from 'date-fns'`              | member `format`                                      |
+| Aliased import                                 | `import { format as f } from 'date-fns'`         | member `format` (source name)                        |
+| Default import + member access                 | `import _ from 'lodash'; _.debounce(...)`        | member `debounce`                                    |
+| Namespace import + member access               | `import * as fs from 'date-fns'; fs.format(...)` | member `format`                                      |
+| Deep import                                    | `import { x } from 'pkg/sub/foo'`                | file `sub/foo`                                       |
+| Side-effect import                             | `import 'pkg/styles.css'`                        | file `styles`                                        |
+| Dynamic import (string literal)                | `await import('pkg/sub')`                        | file `sub`                                           |
+| Dynamic import (template prefix)               | `` await import(`pkg/icons/${name}`) ``          | file `icons` (entire `icons/` tree kept)             |
+| Dynamic import (whole-package or unresolvable) | `await import('pkg')` or `import(somePathVar)`   | wildcard — pruning is **disabled** for this package  |
+| CJS require (string)                           | `require('pkg/sub')`                             | file `sub`                                           |
+| `require.resolve`                              | `require.resolve('pkg/sub')`                     | file `sub`                                           |
+| Namespace member access (generated SDKs)       | `api.shopProduct.update(...)`                    | member `shopProduct`, operation `shopProduct.update` |
+| Hook with imported document                    | `useQuery(GetUserDocument)`                      | member `GetUserDocument`                             |
+| Hook with options object                       | `useQuery({ query: GetUserDocument })`           | member `GetUserDocument`                             |
 
 That covers, in practice:
 
@@ -55,10 +55,10 @@ In those cases pkg-optimize emits a warning and keeps the package whole — it w
 
 To stay neutral across frameworks, `pkg-optimize` uses two abstract terms:
 
-| Term          | What it means                                                  | Examples                                                                  |
-| ------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| **member**    | A top-level symbol attached to the package's root namespace.   | `client.user` (member: `user`), `api.shopProduct` (member: `shopProduct`) |
-| **operation** | A second-level symbol attached to a member.                    | `client.user.list` (operation: `user.list`), `api.shopProduct.update`     |
+| Term          | What it means                                                | Examples                                                                  |
+| ------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| **member**    | A top-level symbol attached to the package's root namespace. | `client.user` (member: `user`), `api.shopProduct` (member: `shopProduct`) |
+| **operation** | A second-level symbol attached to a member.                  | `client.user.list` (operation: `user.list`), `api.shopProduct.update`     |
 
 Whether your codegen tool calls them models/actions, queries/mutations, routers/procedures, or endpoints/methods — `pkg-optimize` always works in terms of `members` and `operations`.
 
@@ -67,6 +67,7 @@ Whether your codegen tool calls them models/actions, queries/mutations, routers/
 - **Node.js 22 or newer** (Node 22 LTS or Node 24 LTS).
 
   Older Node versions are end-of-life and no longer receive security patches:
+
   - Node 18 has been EOL since April 30, 2025 and has multiple unpatched CVEs (HTTP/2 server crash, request smuggling, buffer-allocation race, etc.).
   - Node 20 reached EOL on April 30, 2026.
 
@@ -169,11 +170,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22.14"
+          cache: "npm"
       - run: npm ci
       - run: npx pkg-optimize run
       - run: npm run build
@@ -248,7 +249,7 @@ pkg-optimize is designed to fail safe in CI:
 
 ### Pairing with bundle-size checks
 
-Because pruning happens at the file level *before* your bundler sees the package, tools like `size-limit`, `webpack-bundle-analyzer`, or Next.js's `--analyze` mode work normally and reflect the post-prune size:
+Because pruning happens at the file level _before_ your bundler sees the package, tools like `size-limit`, `webpack-bundle-analyzer`, or Next.js's `--analyze` mode work normally and reflect the post-prune size:
 
 ```yaml
 - run: npm ci
@@ -264,7 +265,11 @@ If a contributor accidentally bypasses pkg-optimize, the bundle grows and `size-
 If you want full intellisense and the original package contents on developer machines (and only prune in CI), keep the explicit step out of `package.json` and call `pkg-optimize run` only from your CI workflow. Or use the inverse — have CI set `PKG_OPTIMIZE=1` and gate your `postinstall` on it:
 
 ```json
-{ "scripts": { "postinstall": "[ \"$PKG_OPTIMIZE\" = '1' ] && pkg-optimize run || true" } }
+{
+  "scripts": {
+    "postinstall": "[ \"$PKG_OPTIMIZE\" = '1' ] && pkg-optimize run || true"
+  }
+}
 ```
 
 (The exact shell incantation depends on your environment; the principle is "make it conditional on a variable your CI sets".)
@@ -367,31 +372,31 @@ Options:
 
 ### Field reference
 
-| Field                                | Type                                                       | Notes                                                                     |
-| ------------------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `patterns.namespace`                 | string                                                     | Root identifier (`client`, `api`, `trpc`, `graphql`, …).                  |
-| `patterns.accessStyle`               | `"member" \| "destructure"`                                | Currently only `"member"` is implemented.                                 |
-| `patterns.depth.member`              | number                                                     | Doc-only; depth at which member references appear.                        |
-| `patterns.depth.operation`           | number                                                     | Doc-only; depth at which operation references appear.                     |
-| `patterns.hooks[].name`              | string                                                     | Function-call name to look for.                                           |
-| `patterns.hooks[].argIndex`          | number                                                     | Which argument carries the symbol reference.                              |
-| `patterns.hooks[].argStyle`          | enum (see below)                                           | How the argument encodes the symbol.                                     |
-| `patterns.hooks[].objectProperty`    | string                                                     | Required for the `object-property-*` styles.                              |
-| `packageStructure.layout`            | `"flat" \| "nested" \| "destructure" \| "barrel"`          | How files are organised on disk (see *Layouts* below).                   |
-| `packageStructure.memberDir`         | string                                                     | Directory holding one file (or subdir) per member.                        |
-| `packageStructure.operationDir`      | string                                                     | Optional separate dir for operations (flat layout only).                  |
-| `packageStructure.naming`            | `"PascalCase" \| "camelCase" \| "kebab-case" \| "snake_case"` | Filename convention for case normalization.                            |
-| `packageStructure.extensions`        | string[]                                                   | File extensions the pruner is allowed to remove (multi-dot OK).           |
-| `packageStructure.preserve`          | string[]                                                   | Files that must never be removed regardless of usage.                     |
+| Field                             | Type                                                          | Notes                                                           |
+| --------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------- |
+| `patterns.namespace`              | string                                                        | Root identifier (`client`, `api`, `trpc`, `graphql`, …).        |
+| `patterns.accessStyle`            | `"member" \| "destructure"`                                   | Currently only `"member"` is implemented.                       |
+| `patterns.depth.member`           | number                                                        | Doc-only; depth at which member references appear.              |
+| `patterns.depth.operation`        | number                                                        | Doc-only; depth at which operation references appear.           |
+| `patterns.hooks[].name`           | string                                                        | Function-call name to look for.                                 |
+| `patterns.hooks[].argIndex`       | number                                                        | Which argument carries the symbol reference.                    |
+| `patterns.hooks[].argStyle`       | enum (see below)                                              | How the argument encodes the symbol.                            |
+| `patterns.hooks[].objectProperty` | string                                                        | Required for the `object-property-*` styles.                    |
+| `packageStructure.layout`         | `"flat" \| "nested" \| "destructure" \| "barrel"`             | How files are organised on disk (see _Layouts_ below).          |
+| `packageStructure.memberDir`      | string                                                        | Directory holding one file (or subdir) per member.              |
+| `packageStructure.operationDir`   | string                                                        | Optional separate dir for operations (flat layout only).        |
+| `packageStructure.naming`         | `"PascalCase" \| "camelCase" \| "kebab-case" \| "snake_case"` | Filename convention for case normalization.                     |
+| `packageStructure.extensions`     | string[]                                                      | File extensions the pruner is allowed to remove (multi-dot OK). |
+| `packageStructure.preserve`       | string[]                                                      | Files that must never be removed regardless of usage.           |
 
 ### Layouts
 
-| Layout         | Shape                                                                                            | Examples                                                |
-| -------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-| `flat`         | One file per member inside `memberDir` (e.g. `models/Foo.js`).                                   | Apollo codegen, tRPC, Orval                             |
-| `nested`       | One subdir per member inside `memberDir`, with optional sub-files for operations.                | Gadget                                                  |
-| `destructure`  | Each top-level entry of `memberDir` (or the package root) is itself a member — file *or* dir.    | `lodash-es`, `date-fns`, `react-icons/*`, `@radix-ui/*` |
-| `barrel`       | A single entry file re-exports everything; not safely prunable.                                  | many bundled libs                                       |
+| Layout        | Shape                                                                                         | Examples                                                |
+| ------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `flat`        | One file per member inside `memberDir` (e.g. `models/Foo.js`).                                | Apollo codegen, tRPC, Orval                             |
+| `nested`      | One subdir per member inside `memberDir`, with optional sub-files for operations.             | Gadget                                                  |
+| `destructure` | Each top-level entry of `memberDir` (or the package root) is itself a member — file _or_ dir. | `lodash-es`, `date-fns`, `react-icons/*`, `@radix-ui/*` |
+| `barrel`      | A single entry file re-exports everything; not safely prunable.                               | many bundled libs                                       |
 
 ### Merge priority (highest to lowest)
 
@@ -408,10 +413,10 @@ If something was pruned and you need it back, add it to `allow.include`:
 {
   "allow": {
     "include": [
-      "user",                      // member
-      "user.create",               // operation on a member
-      "icons/User",                // explicit file path (anything containing `/`)
-      "locale/en-US/index"         // explicit file path
+      "user", // member
+      "user.create", // operation on a member
+      "icons/User", // explicit file path (anything containing `/`)
+      "locale/en-US/index" // explicit file path
     ]
   }
 }
@@ -433,28 +438,28 @@ Fifteen built-in presets ship out of the box. They are auto-applied based on the
 
 ### Codegen / SDK presets (member or hook-driven)
 
-| Preset            | Auto-matches                                 | Notes                                                                 |
-| ----------------- | -------------------------------------------- | --------------------------------------------------------------------- |
-| `gadget`          | `@gadget-client/*`                           | Nested layout, `useFindMany` / `useAction` family.                    |
-| `apollo`          | `@apollo/*`                                  | `useQuery` / `useMutation` accept either an imported document or a string. |
-| `trpc`            | `@trpc/*`                                    | Member-style chained access (`trpc.user.list`).                       |
-| `urql`            | `urql`, `@urql/*`                            | `useQuery({ query: Doc })`, `useMutation(Doc)`, `useSubscription`.    |
+| Preset            | Auto-matches                                 | Notes                                                                                       |
+| ----------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `gadget`          | `@gadget-client/*`                           | Nested layout, `useFindMany` / `useAction` family.                                          |
+| `apollo`          | `@apollo/*`                                  | `useQuery` / `useMutation` accept either an imported document or a string.                  |
+| `trpc`            | `@trpc/*`                                    | Member-style chained access (`trpc.user.list`).                                             |
+| `urql`            | `urql`, `@urql/*`                            | `useQuery({ query: Doc })`, `useMutation(Doc)`, `useSubscription`.                          |
 | `relay`           | `react-relay`, `@relay/*`                    | `useFragment` / `useLazyLoadQuery` / `usePreloadedQuery` over `__generated__/*.graphql.ts`. |
-| `react-query`     | `@tanstack/react-query`, `@tanstack/query-*` | `useQuery({ queryFn })`, `useMutation({ mutationFn })`, etc.          |
-| `swr`             | `swr`                                        | `useSWR(key, fetcher)`, `useSWRMutation`, `useSWRInfinite`.           |
-| `graphql-request` | `graphql-request`                            | `request(url, Doc)` — function-style, not a hook.                     |
-| `graphql-codegen` | `@graphql-codegen/*`                         | Generic GraphQL document import patterns.                             |
-| `orval`           | `orval`, `@orval/*`                          | OpenAPI codegen with kebab-case endpoints + react-query hooks.        |
-| `kubb`            | `@kubb/*`                                    | OpenAPI/GraphQL codegen with nested PascalCase hook layout.           |
+| `react-query`     | `@tanstack/react-query`, `@tanstack/query-*` | `useQuery({ queryFn })`, `useMutation({ mutationFn })`, etc.                                |
+| `swr`             | `swr`                                        | `useSWR(key, fetcher)`, `useSWRMutation`, `useSWRInfinite`.                                 |
+| `graphql-request` | `graphql-request`                            | `request(url, Doc)` — function-style, not a hook.                                           |
+| `graphql-codegen` | `@graphql-codegen/*`                         | Generic GraphQL document import patterns.                                                   |
+| `orval`           | `orval`, `@orval/*`                          | OpenAPI codegen with kebab-case endpoints + react-query hooks.                              |
+| `kubb`            | `@kubb/*`                                    | OpenAPI/GraphQL codegen with nested PascalCase hook layout.                                 |
 
 ### General-purpose library presets (import-driven, destructure layout)
 
-| Preset            | Auto-matches                  | Notes                                                                 |
-| ----------------- | ----------------------------- | --------------------------------------------------------------------- |
-| `lodash-es`       | `lodash-es`                   | One file per export at the package root, camelCase.                   |
-| `date-fns`        | `date-fns`                    | Mixed file/dir layout, camelCase.                                     |
-| `react-icons`     | `react-icons`, `react-icons/*` | One file per icon, PascalCase.                                       |
-| `radix`           | `@radix-ui/*`                 | One file per component, PascalCase.                                   |
+| Preset        | Auto-matches                   | Notes                                               |
+| ------------- | ------------------------------ | --------------------------------------------------- |
+| `lodash-es`   | `lodash-es`                    | One file per export at the package root, camelCase. |
+| `date-fns`    | `date-fns`                     | Mixed file/dir layout, camelCase.                   |
+| `react-icons` | `react-icons`, `react-icons/*` | One file per icon, PascalCase.                      |
+| `radix`       | `@radix-ui/*`                  | One file per component, PascalCase.                 |
 
 The codegen presets describe **how a framework's hooks reference generated symbols**; your `targetPackage` is still the generated client (e.g. `./src/generated/graphql`). React, Preact, and other UI frameworks themselves don't ship a preset because their built-in hooks (`useState`, `useEffect`, …) don't reference any generated symbols.
 
@@ -495,14 +500,14 @@ After one run, only the files you actually `import` survive in `node_modules`; t
 
 The scanner understands six ways a function call can encode the symbol it depends on:
 
-| `argStyle`                   | Example                                     | What gets recorded                                       |
-| ---------------------------- | ------------------------------------------- | -------------------------------------------------------- |
-| `namespace-member`           | `useFn(client.user)`                        | member `user`                                            |
-| `namespace-member-member`    | `useFn(client.user.create)`                 | member `user`, operation `user.create`                   |
-| `string`                     | `useFn("GetUser")`                          | member `GetUser`                                         |
-| `imported-identifier`        | `useFn(GetUserDocument)`                    | member `GetUserDocument`                                 |
-| `object-property-identifier` | `useFn({ query: GetUserDocument })`         | member `GetUserDocument`                                 |
-| `object-property-string`     | `useFn({ operationName: "GetUser" })`       | member `GetUser`                                         |
+| `argStyle`                   | Example                               | What gets recorded                     |
+| ---------------------------- | ------------------------------------- | -------------------------------------- |
+| `namespace-member`           | `useFn(client.user)`                  | member `user`                          |
+| `namespace-member-member`    | `useFn(client.user.create)`           | member `user`, operation `user.create` |
+| `string`                     | `useFn("GetUser")`                    | member `GetUser`                       |
+| `imported-identifier`        | `useFn(GetUserDocument)`              | member `GetUserDocument`               |
+| `object-property-identifier` | `useFn({ query: GetUserDocument })`   | member `GetUserDocument`               |
+| `object-property-string`     | `useFn({ operationName: "GetUser" })` | member `GetUser`                       |
 
 The `object-property-*` variants require an `objectProperty` field naming the key to read. You can list **multiple entries with the same hook name and different `argStyle` values** — the scanner runs every matching pattern, so a preset can accept e.g. both `useQuery(Doc)` and `useQuery({ query: Doc })` simultaneously.
 
@@ -547,4 +552,5 @@ for (const pkg of config.packages) {
 ## License
 
 MIT
+
 # pkg-optimize
