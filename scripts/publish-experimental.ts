@@ -1,0 +1,92 @@
+#!/usr/bin/env node
+
+import { readFile, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { resolve } from "node:path";
+import type { StdioOptions } from "node:child_process";
+
+const workspacePath = (...parts) => resolve(import.meta.dirname, "..", ...parts);
+
+interface RunOptions {
+  capture?: boolean;
+  stdio?: StdioOptions;
+}
+
+async function main() {
+  const status = await run("git", ["status", "--porcelain"], {
+    capture: true,
+  });
+
+  if (status.trim() !== "") {
+    console.error(`
+You have uncommitted changes
+
+Please commit or stash them before publishing
+`);
+    process.exit(1);
+  }
+
+  await step("Installing dependencies", "npm", ["ci"]);
+  await step("Linting", "npm", ["run", "lint"]);
+  await step("Testing", "npm", ["run", "test"]);
+  await step("Building", "npm", ["run", "build"]);
+
+  try {
+    const gitSha = (
+      await run("git", ["rev-parse", "--short", "HEAD"], { capture: true })
+    ).trim();
+    const packageJsonPath = workspacePath("package.json");
+    const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
+
+    packageJson.version = `0.0.0-experimental.${gitSha}`;
+    await writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+
+    console.log(`\nPublishing experimental release: ${packageJson.version}`);
+    await run("npm", ["publish", "--tag", "experimental"], { stdio: "inherit" });
+  } finally {
+    await run("git", ["checkout", "package.json"]);
+  }
+}
+
+async function step(label: string, command: string, args: string[]) {
+  console.log(label);
+  await run(command, args, { stdio: "inherit" });
+}
+
+function run(
+  command: string,
+  args: string[],
+  options: RunOptions = {},
+): Promise<string> {
+  return new Promise<string>((resolveOutput, reject) => {
+    let stdout = "";
+    let stderr = "";
+    const child = spawn(command, args, {
+      cwd: workspacePath(),
+      stdio: options.capture ? ["ignore", "pipe", "pipe"] : options.stdio,
+    });
+
+    child.stdout?.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolveOutput(stdout);
+        return;
+      }
+
+      reject(
+        new Error(
+          stderr.trim() || `${command} ${args.join(" ")} exited with code ${code}`,
+        ),
+      );
+    });
+  });
+}
+
+await main();

@@ -32,6 +32,7 @@ Available scripts:
 | -------------------- | --------------------------------------------------------- |
 | `npm run build`      | Build CJS + ESM bundles into `dist/` via `tsup`.          |
 | `npm run dev`        | Same as `build`, in watch mode.                           |
+| `npm run lint`       | Run `tsc --noEmit` against `src/`.                        |
 | `npm test`           | Run the full Vitest suite once.                           |
 | `npm run test:watch` | Run Vitest in watch mode.                                 |
 | `npm run typecheck`  | Run `tsc --noEmit` against `src/`.                        |
@@ -187,6 +188,32 @@ The release workflow gates publishing on the full CI suite (typecheck +
 test + build) — nothing ships if `main` is red. Contributors **do not**
 need to bump versions or edit `CHANGELOG.md` themselves; both are
 generated from the changesets.
+
+### Experimental releases
+
+Maintainers can publish an installable build from the current commit without
+cutting a normal Changesets release:
+
+```bash
+npm run release:experimental
+```
+
+The script refuses to run with uncommitted changes, then runs `npm ci`,
+`npm run lint`, `npm test`, and `npm run build`. If all checks pass, it
+temporarily rewrites `package.json` to a version like
+`0.0.0-experimental.<git-sha>`, publishes that build to npm with the
+`experimental` dist-tag, and restores `package.json` before exiting.
+
+Install an experimental build with:
+
+```bash
+npm install pkg-optimize@experimental
+```
+
+Use this for testing a specific commit in a real project before deciding
+whether it should go through the normal `latest` release path. Experimental
+releases are intentionally outside the changelog flow, so still add a
+changeset before merging anything that should ship to users.
 
 ## Verifying the published artifacts
 
