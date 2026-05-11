@@ -284,8 +284,8 @@ Commands:
   watch             Watch sources, target packages, and config.
 
 Options:
-  --verbose         Verbose logging.
-  --silent          Errors only.
+  --verbose         Verbose diagnostics (`DEBUG=pkg-optimize:*`).
+  --silent          Only `pkg-optimize:error` debug output.
   --help, -h        Show help.
   --version, -v     Show version.
 ```

@@ -16,7 +16,7 @@ export {
   scoreConfidence,
 } from "./detector.js";
 export { scanDirs, scanFile } from "./scanner.js";
-export type { ScanOptions } from "./scanner.js";
+export type { ScanOptions, ScanWalkStats } from "./scanner.js";
 export {
   prune,
   toCamelCase,
@@ -28,7 +28,14 @@ export { ShakerCache } from "./cache.js";
 export { resolvePackageConfig, deepMerge } from "./resolver.js";
 export { startWatcher } from "./watcher.js";
 export { loadPreset, matchPreset, listPresetNames } from "./presets/index.js";
-export { log } from "./logger.js";
+export {
+  configureLogging,
+  dbg,
+  emitResult,
+  formatResultLine,
+  logVerboseRunSummary,
+  primeErrorDebug,
+} from "./logger.js";
 export { runCli } from "./cli.js";
 export { isAbortError } from "./utils.js";
 

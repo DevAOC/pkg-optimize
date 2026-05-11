@@ -5,7 +5,13 @@ import { parseArgs } from "node:util";
 import { isAbortError } from "./utils.js";
 import { ShakerCache } from "./cache.js";
 import { loadConfig, writeConfig } from "./config.js";
-import { log } from "./logger.js";
+import {
+  configureLogging,
+  dbg,
+  emitResult,
+  logVerboseRunSummary,
+  primeErrorDebug,
+} from "./logger.js";
 import { prune } from "./pruner.js";
 import { resolvePackageConfig } from "./resolver.js";
 import { scanDirs } from "./scanner.js";
@@ -29,6 +35,8 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
   const argv = options.argv ?? process.argv.slice(2);
   const cwd = options.cwd ?? process.cwd();
 
+  primeErrorDebug();
+
   let values: {
     help?: boolean;
     version?: boolean;
@@ -44,7 +52,7 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
       strict: true,
     }));
   } catch (err) {
-    log.error((err as Error).message);
+    dbg.error((err as Error).message);
     printHelp();
     return 1;
   }
@@ -58,13 +66,15 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
     return 0;
   }
 
-  if (values.verbose) log.setLevel("debug");
-  else if (values.silent) log.setLevel("error");
+  configureLogging({
+    verbose: !!values.verbose,
+    silent: !!values.silent,
+  });
 
   const mode = (positionals[0] ?? "run") as "run" | "watch";
 
   if (mode !== "run" && mode !== "watch") {
-    log.error(`Unknown command: ${mode}`);
+    dbg.error(`Unknown command: ${mode}`);
     printHelp();
     return 1;
   }
@@ -73,14 +83,14 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
   try {
     configBundle = await loadConfig(cwd);
   } catch (err) {
-    log.error((err as Error).message);
+    dbg.error((err as Error).message);
     return 1;
   }
 
   const { config, configPath } = configBundle;
 
   if (!config.packages || config.packages.length === 0) {
-    log.warn(
+    dbg.warn(
       'No packages configured. Add a "packages" array to pkg-optimize.config.json.',
     );
     return 0;
@@ -121,7 +131,7 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
           try {
             await stop();
           } catch (err) {
-            log.error(
+            dbg.error(
               (err as Error).stack ?? (err as Error).message ?? String(err),
             );
           } finally {
@@ -162,24 +172,30 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
           configPath,
         );
       } catch (err) {
-        log.warn(
+        dbg.warn(
           `Could not persist detected config: ${(err as Error).message}`,
         );
       }
     }
 
-    for (const r of results) log.result(r);
+    for (const r of results) emitResult(r);
+
+    logVerboseRunSummary(results);
 
     const totalRemoved = results.reduce((acc, r) => acc + r.removed.length, 0);
+    const totalRestored = results.reduce(
+      (acc, r) => acc + r.restored.length,
+      0,
+    );
     const totalKept = results.reduce((acc, r) => acc + r.kept.length, 0);
-    log.info(
-      `Done. ${totalRemoved} file(s) removed, ${totalKept} kept across ${results.length} package(s).`,
+    dbg.info(
+      `Done. ${totalRemoved} removed, ${totalRestored} restored, ${totalKept} kept across ${results.length} package(s).`,
     );
 
     return 0;
   } catch (err) {
     if (isAbortError(err)) {
-      log.info("Interrupted.");
+      dbg.info("Interrupted.");
       return 130;
     }
     throw err;
@@ -196,6 +212,11 @@ async function runOnce(
   const cache = new ShakerCache(pkg.cache.dir, pkg.targetPackage, cwd);
 
   if (!(await cache.livePackageExists())) {
+    dbg.cli(
+      "skip %s: not installed at node_modules/%s",
+      pkg.targetPackage,
+      pkg.targetPackage,
+    );
     return {
       packageName: pkg.targetPackage,
       removed: [],
@@ -241,8 +262,8 @@ Commands:
   help              Show this help message.
 
 Options:
-  --verbose         Verbose logging.
-  --silent          Errors only.
+  --verbose         Verbose diagnostics (enables debug for pkg-optimize:*).
+  --silent          Only pkg-optimize:error debug output.
   --help, -h        Show help.
   --version, -v     Show version.
 
@@ -296,7 +317,7 @@ if (shouldAutoRun) {
       const code = await runCli();
       if (typeof code === "number") process.exit(code);
     } catch (err) {
-      log.error((err as Error).stack ?? (err as Error).message ?? String(err));
+      dbg.error((err as Error).stack ?? (err as Error).message ?? String(err));
       process.exit(1);
     }
   })();

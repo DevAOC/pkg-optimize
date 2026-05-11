@@ -1,10 +1,12 @@
 import { cp, mkdir, rm, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { dbg } from './logger.js';
 import { isAbortError, pathExists, withSignal } from './utils.js';
 
 export class ShakerCache {
   private readonly packageDir: string;
   private readonly cachedPackageDir: string;
+  private readonly targetPackage: string;
   /**
    * Serialize mutating operations (`prime` / `reprime`). The sync `*Sync` APIs
    * the watcher used to call were naturally serialized by Node's single
@@ -14,6 +16,7 @@ export class ShakerCache {
   private inflight: Promise<unknown> = Promise.resolve();
 
   constructor(cacheBaseDir: string, targetPackage: string, projectRoot: string) {
+    this.targetPackage = targetPackage;
     this.packageDir = resolve(projectRoot, 'node_modules', targetPackage);
     this.cachedPackageDir = resolve(projectRoot, cacheBaseDir, targetPackage);
   }
@@ -36,6 +39,12 @@ export class ShakerCache {
           `Cannot prime cache: package not found at ${this.packageDir}. Has it been installed?`,
         );
       }
+      dbg.cache(
+        '[%s] prime: copy %s → cache %s',
+        this.targetPackage,
+        this.packageDir,
+        this.cachedPackageDir,
+      );
       await withSignal(signal, () =>
         mkdir(this.cachedPackageDir, { recursive: true }),
       );
@@ -49,6 +58,7 @@ export class ShakerCache {
           dereference: true,
         }),
       );
+      dbg.cache('[%s] prime: done', this.targetPackage);
     });
   }
 
@@ -67,7 +77,10 @@ export class ShakerCache {
     const signal = opts?.signal;
     return this.enqueue(async () => {
       opts?.signal?.throwIfAborted();
-      if (!(await pathExists(this.packageDir, signal))) return false;
+      if (!(await pathExists(this.packageDir, signal))) {
+        dbg.cache('[%s] reprime: skip (live package missing)', this.targetPackage);
+        return false;
+      }
 
       if (!opts?.force) {
         const livePkgJson = resolve(this.packageDir, 'package.json');
@@ -88,9 +101,20 @@ export class ShakerCache {
           cacheMtime = 0;
         }
 
-        if (liveMtime <= cacheMtime) return false;
+        if (liveMtime <= cacheMtime) {
+          dbg.cache(
+            '[%s] reprime: skip (package.json mtime unchanged)',
+            this.targetPackage,
+          );
+          return false;
+        }
       }
 
+      dbg.cache(
+        '[%s] reprime: refresh cache (force=%s)',
+        this.targetPackage,
+        String(!!opts?.force),
+      );
       await withSignal(signal, () =>
         rm(this.cachedPackageDir, { recursive: true, force: true }),
       );
@@ -104,6 +128,7 @@ export class ShakerCache {
           dereference: true,
         }),
       );
+      dbg.cache('[%s] reprime: done', this.targetPackage);
       return true;
     });
   }

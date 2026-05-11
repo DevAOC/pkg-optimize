@@ -56,7 +56,7 @@ src/
   config.ts       # Config loading, validation, preset resolution
   detector.ts     # Package layout/naming auto-detection
   index.ts        # Public programmatic API
-  logger.ts       # Logging helpers
+  logger.ts       # `debug` namespaces (`dbg`) + `configureLogging` / `primeErrorDebug`
   pruner.ts       # Decides what to remove/restore from a target package
   resolver.ts     # Resolves usage entries to concrete files
   scanner.ts      # AST scan of source files for imports/usage

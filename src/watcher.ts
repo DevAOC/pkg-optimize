@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { ShakerCache } from './cache.js';
 import { loadConfig, writeConfig } from './config.js';
 import { pathExists } from './utils.js';
-import { log } from './logger.js';
+import { dbg, emitResult } from './logger.js';
 import { prune } from './pruner.js';
 import { resolvePackageConfig } from './resolver.js';
 import { scanDirs } from './scanner.js';
@@ -24,6 +24,8 @@ export interface StartWatcherOptions {
 export async function startWatcher(options: StartWatcherOptions): Promise<() => Promise<void>> {
   const { configPath, projectRoot, signal } = options;
   let { config } = options;
+
+  dbg.watcher('starting watcher for %d configured package(s)', config.packages.length);
 
   let resolvedPackages = await resolveAllPackages(config, projectRoot);
 
@@ -48,7 +50,7 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
           try {
             await runPruneForPackage(pkg, projectRoot, reason, { soft: pkg.watch.softPruneInDev }, signal);
           } catch (err) {
-            log.error(`[${pkg.targetPackage}] prune failed: ${(err as Error).message}`);
+            dbg.error(`[${pkg.targetPackage}] prune failed: ${(err as Error).message}`);
           }
         })();
       }, pkg.watch.debounceMs),
@@ -61,7 +63,7 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
   );
   const allPackagesPruner = debounce(async (reason: string) => {
     signal?.throwIfAborted();
-    log.info(`Re-scanning all packages (${reason})...`);
+    dbg.info(`Re-scanning all packages (${reason})...`);
     for (const pkg of resolvedPackages) {
       signal?.throwIfAborted();
       await runPruneForPackage(pkg, projectRoot, reason, {
@@ -96,13 +98,17 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
           try {
             const reprimed = await cache.reprime({ force: fileSetChanged, signal });
             if (reprimed) {
-              log.info(
+              dbg.watcher(
+                '[%s] live package file set changed — reprimed cache, scheduling prune',
+                pkg.targetPackage,
+              );
+              dbg.info(
                 `[${pkg.targetPackage}] package changed externally — re-priming cache`,
               );
               packagePruners.get(pkg.targetPackage)?.('package updated');
             }
           } catch (err) {
-            log.error(
+            dbg.error(
               `[${pkg.targetPackage}] cache reprime failed: ${(err as Error).message}`,
             );
           }
@@ -127,7 +133,7 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
     .watch(configPath, { ignoreInitial: true })
     .on('change', async () => {
       if (signal?.aborted) return;
-      log.info('Config changed — reloading and re-running all packages...');
+      dbg.info('Config changed — reloading and re-running all packages...');
       try {
         const next = await loadConfig(projectRoot);
         config = next.config;
@@ -139,12 +145,18 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
           }, signal);
         }
       } catch (err) {
-        log.error(`Failed to reload config: ${(err as Error).message}`);
+        dbg.error(`Failed to reload config: ${(err as Error).message}`);
       }
     });
 
-  log.info(
+  dbg.info(
     `Watching ${resolvedPackages.length} package(s) and ${allScanDirs.length} source dir(s)...`,
+  );
+  dbg.watcher(
+    'watch roots: packages=%s scanDirs=%s config=%s',
+    resolvedPackages.map((p) => p.targetPackage).join(', '),
+    allScanDirs.join(', '),
+    configPath,
   );
 
   return async function stop() {
@@ -164,13 +176,15 @@ async function runPruneForPackage(
   signal?: AbortSignal,
 ): Promise<void> {
   signal?.throwIfAborted();
-  log.info(`[${pkg.targetPackage}] Re-scanning (${reason})...`);
+  dbg.info(`[${pkg.targetPackage}] Re-scanning (${reason})...`);
+  dbg.watcher('[%s] prune run reason=%s soft=%s', pkg.targetPackage, reason, String(opts.soft));
   const cache = new ShakerCache(pkg.cache.dir, pkg.targetPackage, projectRoot);
   if (!(await cache.isCached())) {
     if (await cache.livePackageExists()) {
       await cache.prime({ signal });
     } else {
-      log.warn(`[${pkg.targetPackage}] package not installed — skipping`);
+      dbg.watcher('[%s] skip: package not installed', pkg.targetPackage);
+      dbg.warn(`[${pkg.targetPackage}] package not installed — skipping`);
       return;
     }
   }
@@ -186,7 +200,7 @@ async function runPruneForPackage(
     soft: opts.soft,
     signal,
   });
-  log.result(result);
+  emitResult(result);
 }
 
 async function resolveAllPackages(
