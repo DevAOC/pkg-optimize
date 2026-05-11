@@ -1,5 +1,5 @@
 import { defineConfig } from 'tsup';
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { copyFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 export default defineConfig([
@@ -14,13 +14,20 @@ export default defineConfig([
     onSuccess: async () => {
       const src = resolve('src/presets');
       const dest = resolve('dist/presets');
-      if (!existsSync(src)) return;
-      mkdirSync(dest, { recursive: true });
-      for (const name of readdirSync(src)) {
-        if (name.endsWith('.json')) {
-          copyFileSync(resolve(src, name), resolve(dest, name));
-        }
+      try {
+        await stat(src);
+      } catch {
+        return;
       }
+      await mkdir(dest, { recursive: true });
+      const names = await readdir(src);
+      await Promise.all(
+        names.reduce<Promise<void>[]>((acc, name) => {
+          if (!name.endsWith('.json')) return acc;
+          acc.push(copyFile(resolve(src, name), resolve(dest, name)));
+          return acc;
+        }, []),
+      );
     },
   },
   {

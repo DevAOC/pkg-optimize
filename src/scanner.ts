@@ -11,8 +11,10 @@ import type {
   ObjectProperty,
   TemplateLiteral,
 } from '@babel/types';
-import { type Dirent, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import type { Dirent } from 'node:fs';
+import { readFile, readdir } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
+import { isAbortError, isDirectory, pathExists, withSignal } from './utils.js';
 import type { PatternsConfig, UsageMap } from './types.js';
 
 // `@babel/traverse` is a CJS module; default-export interop differs between
@@ -39,41 +41,51 @@ export interface ScanOptions {
    * deep-import file references.
    */
   targetPackage?: string;
+  /** When aborted, directory walks and file reads stop cooperatively. */
+  signal?: AbortSignal;
 }
 
-export function scanDirs(
+export async function scanDirs(
   dirs: string[],
   projectRoot: string,
   patterns: PatternsConfig,
   options: ScanOptions = {},
-): UsageMap {
+): Promise<UsageMap> {
+  options.signal?.throwIfAborted();
   const usageMap: UsageMap = {
     members: new Set(),
     operations: new Set(),
     files: new Set(),
   };
 
-  for (const dir of dirs) {
-    const abs = resolve(projectRoot, dir);
-    if (!existsSync(abs)) continue;
-    walkDir(abs, (filePath) => {
-      scanFile(filePath, patterns, usageMap, options);
-    });
-  }
+  const { signal } = options;
+  await Promise.all(
+    dirs.map(async (dir) => {
+      const abs = resolve(projectRoot, dir);
+      if (!(await pathExists(abs, signal))) return;
+      await walkDir(
+        abs,
+        (filePath) => scanFile(filePath, patterns, usageMap, options),
+        signal,
+      );
+    }),
+  );
 
   return usageMap;
 }
 
-export function scanFile(
+export async function scanFile(
   filePath: string,
   patterns: PatternsConfig,
   usageMap: UsageMap,
   options: ScanOptions = {},
-): void {
+): Promise<void> {
+  const { signal } = options;
   let source: string;
   try {
-    source = readFileSync(filePath, 'utf-8');
-  } catch {
+    source = await withSignal(signal, () => readFile(filePath, { encoding: 'utf-8' }));
+  } catch (err) {
+    if (isAbortError(err)) throw err;
     return;
   }
 
@@ -406,33 +418,40 @@ function readObjectProperty(
   return null;
 }
 
-function walkDir(dir: string, cb: (filePath: string) => void): void {
+async function walkDir(
+  dir: string,
+  cb: (filePath: string) => void | Promise<void>,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
   let entries: Dirent[];
   try {
-    entries = readdirSync(dir, { withFileTypes: true }) as Dirent[];
-  } catch {
+    entries = (await withSignal(signal, () =>
+      readdir(dir, { withFileTypes: true }),
+    )) as Dirent[];
+  } catch (err) {
+    if (isAbortError(err)) throw err;
     return;
   }
 
-  for (const entry of entries) {
-    if (entry.name.startsWith('.') && entry.name !== '.') {
-      if (entry.isDirectory()) continue;
-    }
-    const full = resolve(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (IGNORED_DIRS.has(entry.name)) continue;
-      walkDir(full, cb);
-    } else if (entry.isFile()) {
-      const ext = entry.name.endsWith('.d.ts') ? '.d.ts' : extname(entry.name);
-      if (SCAN_EXTENSIONS.has(ext)) cb(full);
-    }
-  }
+  await Promise.all(
+    entries.map(async (entry) => {
+      signal?.throwIfAborted();
+      if (entry.name.startsWith('.') && entry.name !== '.') {
+        if (entry.isDirectory()) return;
+      }
+      const full = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (IGNORED_DIRS.has(entry.name)) return;
+        await walkDir(full, cb, signal);
+      } else if (entry.isFile()) {
+        const ext = entry.name.endsWith('.d.ts') ? '.d.ts' : extname(entry.name);
+        if (SCAN_EXTENSIONS.has(ext)) await cb(full);
+      }
+    }),
+  );
 }
 
-export function dirExists(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
+export function dirExists(path: string): Promise<boolean> {
+  return isDirectory(path);
 }

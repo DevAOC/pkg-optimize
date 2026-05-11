@@ -1,12 +1,6 @@
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  rmSync,
-  statSync,
-} from 'node:fs';
+import { cp, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
+import { isAbortError, pathExists, withSignal } from './utils.js';
 import type {
   PruneResult,
   ResolvedPackageConfig,
@@ -23,6 +17,8 @@ export interface PruneArgs {
   targetDir: string;
   /** When true, do not delete from disk — only warn. Restores still happen. */
   soft?: boolean;
+  /** Aborted scans/prunes stop cooperatively (watch shutdown, SIGINT, etc.). */
+  signal?: AbortSignal;
 }
 
 interface AllowSet {
@@ -32,8 +28,9 @@ interface AllowSet {
   files: Set<string>;
 }
 
-export function prune(args: PruneArgs): PruneResult {
-  const { usageMap, config, sourceDir } = args;
+export async function prune(args: PruneArgs): Promise<PruneResult> {
+  const { usageMap, config, sourceDir, signal } = args;
+  signal?.throwIfAborted();
   const allowSet = buildAllowSet(usageMap, config.allow);
 
   const result: PruneResult = {
@@ -44,7 +41,7 @@ export function prune(args: PruneArgs): PruneResult {
     warnings: [],
   };
 
-  if (!existsSync(sourceDir)) {
+  if (!(await pathExists(sourceDir, signal))) {
     result.warnings.push(
       `No cache found at ${sourceDir}. Skipping prune for ${config.targetPackage}.`,
     );
@@ -55,7 +52,7 @@ export function prune(args: PruneArgs): PruneResult {
   // `require('pkg')` / `import(somePath)` it couldn't statically resolve, we
   // can't safely remove anything. Restore everything and bail.
   if (usageMap.wildcard) {
-    restoreAll(args, result);
+    await restoreAll(args, result);
     result.warnings.push(
       `${config.targetPackage}: dynamic import detected with an unresolvable target — pruning skipped, all files kept/restored.`,
     );
@@ -66,13 +63,13 @@ export function prune(args: PruneArgs): PruneResult {
 
   switch (layout) {
     case 'nested':
-      pruneNested(args, allowSet, result);
+      await pruneNested(args, allowSet, result);
       break;
     case 'flat':
-      pruneFlat(args, allowSet, result);
+      await pruneFlat(args, allowSet, result);
       break;
     case 'destructure':
-      pruneDestructure(args, allowSet, result);
+      await pruneDestructure(args, allowSet, result);
       break;
     case 'barrel':
       result.warnings.push(
@@ -150,121 +147,140 @@ function pathMatchesFiles(relPath: string, files: Set<string>): boolean {
   return false;
 }
 
-function pruneNested(args: PruneArgs, allowSet: AllowSet, result: PruneResult): void {
-  const { config, sourceDir, targetDir, soft } = args;
+async function pruneNested(
+  args: PruneArgs,
+  allowSet: AllowSet,
+  result: PruneResult,
+): Promise<void> {
+  const { config, sourceDir, targetDir, soft, signal } = args;
   const memberDirName = config.packageStructure.memberDir ?? 'members';
   const cachedMembersDir = resolve(sourceDir, memberDirName);
   const liveMembersDir = resolve(targetDir, memberDirName);
 
-  if (!existsSync(cachedMembersDir)) {
+  if (!(await pathExists(cachedMembersDir, signal))) {
     result.warnings.push(
       `Cached member dir ${memberDirName} not found in cache for ${config.targetPackage}.`,
     );
     return;
   }
 
-  const memberEntries = safeReaddir(cachedMembersDir);
+  const memberEntries = await safeReaddir(cachedMembersDir, signal);
 
-  for (const entry of memberEntries) {
-    const cachedEntryPath = resolve(cachedMembersDir, entry);
-    const liveEntryPath = resolve(liveMembersDir, entry);
-    let isDir = false;
-    try {
-      isDir = statSync(cachedEntryPath).isDirectory();
-    } catch {
-      continue;
-    }
-
-    if (!isDir) {
-      if (isPreserved(entry, config.packageStructure)) {
-        ensureFileFromCache(cachedEntryPath, liveEntryPath, result, entry);
-      }
-      continue;
-    }
-
-    const memberSymbol = toCamelCase(entry);
-    const memberAllowed =
-      allowSet.members.has(memberSymbol) ||
-      pathMatchesFiles(`${memberDirName}/${entry}`, allowSet.files);
-
-    if (!memberAllowed) {
-      removeIfPresent(liveEntryPath, soft, result, `${memberDirName}/${entry}`);
-      continue;
-    }
-
-    if (!existsSync(liveEntryPath)) {
-      mkdirSync(liveEntryPath, { recursive: true });
-    }
-
-    walkFiles(cachedEntryPath, (cachedFilePath) => {
-      const relFromMember = relative(cachedEntryPath, cachedFilePath);
-      const liveFilePath = resolve(liveEntryPath, relFromMember);
-      const segments = relFromMember.split(/[\\/]+/);
-      const isOperationFile = segments.length > 1;
-      const fullRel = `${memberDirName}/${entry}/${relFromMember}`;
-
-      if (!isOperationFile) {
-        ensureFileFromCache(cachedFilePath, liveFilePath, result, fullRel);
+  await Promise.all(
+    memberEntries.map(async (entry) => {
+      signal?.throwIfAborted();
+      const cachedEntryPath = resolve(cachedMembersDir, entry);
+      const liveEntryPath = resolve(liveMembersDir, entry);
+      let isDir = false;
+      try {
+        isDir = (await withSignal(signal, () => stat(cachedEntryPath))).isDirectory();
+      } catch (err) {
+        if (isAbortError(err)) throw err;
         return;
       }
 
-      const operationFile = segments[segments.length - 1]!;
-      if (isPreserved(operationFile, config.packageStructure)) {
-        ensureFileFromCache(cachedFilePath, liveFilePath, result, fullRel);
+      if (!isDir) {
+        if (isPreserved(entry, config.packageStructure)) {
+          await ensureFileFromCache(cachedEntryPath, liveEntryPath, result, entry, signal);
+        }
         return;
       }
 
-      const operationSymbol = toCamelCase(
-        stripExtension(operationFile, config.packageStructure.extensions),
-      );
-      const operationAllowed =
-        allowSet.operations.has(`${memberSymbol}.${operationSymbol}`) ||
-        pathMatchesFiles(fullRel, allowSet.files);
+      const memberSymbol = toCamelCase(entry);
+      const memberAllowed =
+        allowSet.members.has(memberSymbol) ||
+        pathMatchesFiles(`${memberDirName}/${entry}`, allowSet.files);
 
-      if (operationAllowed) {
-        ensureFileFromCache(cachedFilePath, liveFilePath, result, fullRel);
-      } else {
-        removeIfPresent(liveFilePath, soft, result, fullRel);
+      if (!memberAllowed) {
+        await removeIfPresent(liveEntryPath, soft, result, `${memberDirName}/${entry}`, signal);
+        return;
       }
-    });
-  }
 
-  preserveTopLevel(args, result);
+      if (!(await pathExists(liveEntryPath, signal))) {
+        await withSignal(signal, () => mkdir(liveEntryPath, { recursive: true }));
+      }
+
+      await walkFiles(cachedEntryPath, async (cachedFilePath) => {
+        const relFromMember = relative(cachedEntryPath, cachedFilePath);
+        const liveFilePath = resolve(liveEntryPath, relFromMember);
+        const segments = relFromMember.split(/[\\/]+/);
+        const isOperationFile = segments.length > 1;
+        const fullRel = `${memberDirName}/${entry}/${relFromMember}`;
+
+        if (!isOperationFile) {
+          await ensureFileFromCache(cachedFilePath, liveFilePath, result, fullRel, signal);
+          return;
+        }
+
+        const operationFile = segments[segments.length - 1]!;
+        if (isPreserved(operationFile, config.packageStructure)) {
+          await ensureFileFromCache(cachedFilePath, liveFilePath, result, fullRel, signal);
+          return;
+        }
+
+        const operationSymbol = toCamelCase(
+          stripExtension(operationFile, config.packageStructure.extensions),
+        );
+        const operationAllowed =
+          allowSet.operations.has(`${memberSymbol}.${operationSymbol}`) ||
+          pathMatchesFiles(fullRel, allowSet.files);
+
+        if (operationAllowed) {
+          await ensureFileFromCache(cachedFilePath, liveFilePath, result, fullRel, signal);
+        } else {
+          await removeIfPresent(liveFilePath, soft, result, fullRel, signal);
+        }
+      }, signal);
+    }),
+  );
+
+  await preserveTopLevel(args, result);
 }
 
-function pruneFlat(args: PruneArgs, allowSet: AllowSet, result: PruneResult): void {
-  const { config } = args;
+async function pruneFlat(
+  args: PruneArgs,
+  allowSet: AllowSet,
+  result: PruneResult,
+): Promise<void> {
+  const { config, signal } = args;
   const memberDirName = config.packageStructure.memberDir;
   const operationDirName = config.packageStructure.operationDir;
 
+  const jobs: Array<Promise<void>> = [];
+
   if (memberDirName) {
-    processFlatDir(
-      resolve(args.sourceDir, memberDirName),
-      resolve(args.targetDir, memberDirName),
-      memberDirName,
-      'member',
-      args,
-      allowSet,
-      result,
+    jobs.push(
+      processFlatDir(
+        resolve(args.sourceDir, memberDirName),
+        resolve(args.targetDir, memberDirName),
+        memberDirName,
+        'member',
+        args,
+        allowSet,
+        result,
+      ),
     );
   }
 
   if (operationDirName && operationDirName !== memberDirName) {
-    processFlatDir(
-      resolve(args.sourceDir, operationDirName),
-      resolve(args.targetDir, operationDirName),
-      operationDirName,
-      'operation',
-      args,
-      allowSet,
-      result,
+    jobs.push(
+      processFlatDir(
+        resolve(args.sourceDir, operationDirName),
+        resolve(args.targetDir, operationDirName),
+        operationDirName,
+        'operation',
+        args,
+        allowSet,
+        result,
+      ),
     );
   }
 
-  preserveTopLevel(args, result);
+  await Promise.all(jobs);
+  await preserveTopLevel(args, result);
 }
 
-function processFlatDir(
+async function processFlatDir(
   cachedDir: string,
   liveDir: string,
   dirName: string,
@@ -272,55 +288,59 @@ function processFlatDir(
   args: PruneArgs,
   allowSet: AllowSet,
   result: PruneResult,
-): void {
-  const { config, soft } = args;
-  if (!existsSync(cachedDir)) {
+): Promise<void> {
+  const { config, soft, signal } = args;
+  if (!(await pathExists(cachedDir, signal))) {
     result.warnings.push(`Cached dir ${dirName} not found for ${config.targetPackage}.`);
     return;
   }
 
-  const entries = safeReaddir(cachedDir);
+  const entries = await safeReaddir(cachedDir, signal);
 
-  for (const entry of entries) {
-    const cachedFile = resolve(cachedDir, entry);
-    const liveFile = resolve(liveDir, entry);
-    let isDir = false;
-    try {
-      isDir = statSync(cachedFile).isDirectory();
-    } catch {
-      continue;
-    }
-
-    if (isDir) continue;
-
-    const fullRel = `${dirName}/${entry}`;
-
-    if (isPreserved(entry, config.packageStructure)) {
-      ensureFileFromCache(cachedFile, liveFile, result, fullRel);
-      continue;
-    }
-
-    const stripped = stripExtension(entry, config.packageStructure.extensions);
-    let allowed = false;
-    if (kind === 'member') {
-      const memberSymbol = toCamelCase(stripped);
-      allowed = allowSet.members.has(memberSymbol);
-    } else {
-      const symbol = toCamelCase(stripped.replace(/[._-]/g, '.'));
-      allowed = allowSet.operations.has(symbol);
-      if (!allowed) {
-        const justMember = toCamelCase(stripped);
-        allowed = allowSet.members.has(justMember);
+  await Promise.all(
+    entries.map(async (entry) => {
+      signal?.throwIfAborted();
+      const cachedFile = resolve(cachedDir, entry);
+      const liveFile = resolve(liveDir, entry);
+      let isDir = false;
+      try {
+        isDir = (await withSignal(signal, () => stat(cachedFile))).isDirectory();
+      } catch (err) {
+        if (isAbortError(err)) throw err;
+        return;
       }
-    }
-    if (!allowed) allowed = pathMatchesFiles(fullRel, allowSet.files);
 
-    if (allowed) {
-      ensureFileFromCache(cachedFile, liveFile, result, fullRel);
-    } else {
-      removeIfPresent(liveFile, soft, result, fullRel);
-    }
-  }
+      if (isDir) return;
+
+      const fullRel = `${dirName}/${entry}`;
+
+      if (isPreserved(entry, config.packageStructure)) {
+        await ensureFileFromCache(cachedFile, liveFile, result, fullRel, signal);
+        return;
+      }
+
+      const stripped = stripExtension(entry, config.packageStructure.extensions);
+      let allowed = false;
+      if (kind === 'member') {
+        const memberSymbol = toCamelCase(stripped);
+        allowed = allowSet.members.has(memberSymbol);
+      } else {
+        const symbol = toCamelCase(stripped.replace(/[._-]/g, '.'));
+        allowed = allowSet.operations.has(symbol);
+        if (!allowed) {
+          const justMember = toCamelCase(stripped);
+          allowed = allowSet.members.has(justMember);
+        }
+      }
+      if (!allowed) allowed = pathMatchesFiles(fullRel, allowSet.files);
+
+      if (allowed) {
+        await ensureFileFromCache(cachedFile, liveFile, result, fullRel, signal);
+      } else {
+        await removeIfPresent(liveFile, soft, result, fullRel, signal);
+      }
+    }),
+  );
 }
 
 /**
@@ -330,61 +350,65 @@ function processFlatDir(
  * either a single file or a directory; we keep or remove it as a whole based
  * on whether its symbol or path is in the allow set.
  */
-function pruneDestructure(
+async function pruneDestructure(
   args: PruneArgs,
   allowSet: AllowSet,
   result: PruneResult,
-): void {
-  const { config, sourceDir, targetDir, soft } = args;
+): Promise<void> {
+  const { config, sourceDir, targetDir, soft, signal } = args;
   const memberDirName = config.packageStructure.memberDir ?? '.';
   const cachedRoot = resolve(sourceDir, memberDirName);
   const liveRoot = resolve(targetDir, memberDirName);
 
-  if (!existsSync(cachedRoot)) {
+  if (!(await pathExists(cachedRoot, signal))) {
     result.warnings.push(
       `Cached member dir ${memberDirName} not found in cache for ${config.targetPackage}.`,
     );
     return;
   }
 
-  const entries = safeReaddir(cachedRoot);
+  const entries = await safeReaddir(cachedRoot, signal);
   const dirPrefix = memberDirName === '.' || memberDirName === '' ? '' : `${memberDirName}/`;
 
-  for (const entry of entries) {
-    const cachedEntry = resolve(cachedRoot, entry);
-    const liveEntry = resolve(liveRoot, entry);
-    let stat;
-    try {
-      stat = statSync(cachedEntry);
-    } catch {
-      continue;
-    }
+  await Promise.all(
+    entries.map(async (entry) => {
+      signal?.throwIfAborted();
+      const cachedEntry = resolve(cachedRoot, entry);
+      const liveEntry = resolve(liveRoot, entry);
+      let s;
+      try {
+        s = await withSignal(signal, () => stat(cachedEntry));
+      } catch (err) {
+        if (isAbortError(err)) throw err;
+        return;
+      }
 
-    const fullRel = `${dirPrefix}${entry}`;
+      const fullRel = `${dirPrefix}${entry}`;
 
-    if (isPreserved(entry, config.packageStructure)) {
-      ensureFileFromCache(cachedEntry, liveEntry, result, fullRel);
-      continue;
-    }
+      if (isPreserved(entry, config.packageStructure)) {
+        await ensureFileFromCache(cachedEntry, liveEntry, result, fullRel, signal);
+        return;
+      }
 
-    const stripped = stripExtension(entry, config.packageStructure.extensions);
-    const memberSymbol = toCamelCase(stripped);
-    const allowed =
-      allowSet.members.has(memberSymbol) ||
-      pathMatchesFiles(fullRel, allowSet.files) ||
-      pathMatchesFiles(`${dirPrefix}${stripped}`, allowSet.files);
+      const stripped = stripExtension(entry, config.packageStructure.extensions);
+      const memberSymbol = toCamelCase(stripped);
+      const allowed =
+        allowSet.members.has(memberSymbol) ||
+        pathMatchesFiles(fullRel, allowSet.files) ||
+        pathMatchesFiles(`${dirPrefix}${stripped}`, allowSet.files);
 
-    if (allowed) {
-      ensureFileFromCache(cachedEntry, liveEntry, result, fullRel);
-    } else if (stat.isDirectory()) {
-      removeIfPresent(liveEntry, soft, result, fullRel);
-    } else {
-      removeIfPresent(liveEntry, soft, result, fullRel);
-    }
-  }
+      if (allowed) {
+        await ensureFileFromCache(cachedEntry, liveEntry, result, fullRel, signal);
+      } else if (s.isDirectory()) {
+        await removeIfPresent(liveEntry, soft, result, fullRel, signal);
+      } else {
+        await removeIfPresent(liveEntry, soft, result, fullRel, signal);
+      }
+    }),
+  );
 
   if (memberDirName !== '.' && memberDirName !== '') {
-    preserveTopLevel(args, result);
+    await preserveTopLevel(args, result);
   }
 }
 
@@ -393,91 +417,116 @@ function pruneDestructure(
  * dynamic-import wildcard mode: we can't safely remove anything, but we still
  * want to *restore* anything that may have been pruned in a prior run.
  */
-function restoreAll(args: PruneArgs, result: PruneResult): void {
-  const { sourceDir, targetDir } = args;
-  walkFiles(sourceDir, (cachedPath) => {
-    const rel = relative(sourceDir, cachedPath).split(sep).join('/');
-    const livePath = resolve(targetDir, rel);
-    ensureFileFromCache(cachedPath, livePath, result, rel);
-  });
+async function restoreAll(args: PruneArgs, result: PruneResult): Promise<void> {
+  const { sourceDir, targetDir, signal } = args;
+  await walkFiles(
+    sourceDir,
+    async (cachedPath) => {
+      const rel = relative(sourceDir, cachedPath).split(sep).join('/');
+      const livePath = resolve(targetDir, rel);
+      await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
+    },
+    signal,
+  );
 }
 
-function preserveTopLevel(args: PruneArgs, result: PruneResult): void {
-  const { config, sourceDir, targetDir } = args;
-  const entries = safeReaddir(sourceDir);
-  for (const entry of entries) {
-    const cached = resolve(sourceDir, entry);
-    const live = resolve(targetDir, entry);
-    let isFile = false;
-    try {
-      isFile = statSync(cached).isFile();
-    } catch {
-      continue;
-    }
-    if (!isFile) continue;
-    if (isPreserved(entry, config.packageStructure)) {
-      ensureFileFromCache(cached, live, result, entry);
-    }
-  }
+async function preserveTopLevel(args: PruneArgs, result: PruneResult): Promise<void> {
+  const { config, sourceDir, targetDir, signal } = args;
+  const entries = await safeReaddir(sourceDir, signal);
+  await Promise.all(
+    entries.map(async (entry) => {
+      signal?.throwIfAborted();
+      const cached = resolve(sourceDir, entry);
+      const live = resolve(targetDir, entry);
+      let isFile = false;
+      try {
+        isFile = (await withSignal(signal, () => stat(cached))).isFile();
+      } catch (err) {
+        if (isAbortError(err)) throw err;
+        return;
+      }
+      if (!isFile) return;
+      if (isPreserved(entry, config.packageStructure)) {
+        await ensureFileFromCache(cached, live, result, entry, signal);
+      }
+    }),
+  );
 }
 
-function ensureFileFromCache(
+async function ensureFileFromCache(
   cachedPath: string,
   livePath: string,
   result: PruneResult,
   label: string,
-): void {
-  if (!existsSync(cachedPath)) return;
-  if (!existsSync(livePath)) {
-    mkdirSync(dirname(livePath), { recursive: true });
-    cpSync(cachedPath, livePath, { recursive: true, force: true });
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  if (!(await pathExists(cachedPath, signal))) return;
+  if (!(await pathExists(livePath, signal))) {
+    await withSignal(signal, () => mkdir(dirname(livePath), { recursive: true }));
+    await withSignal(signal, () =>
+      cp(cachedPath, livePath, { recursive: true, force: true }),
+    );
     result.restored.push(label);
   } else {
     result.kept.push(label);
   }
 }
 
-function removeIfPresent(
+async function removeIfPresent(
   livePath: string,
   soft: boolean | undefined,
   result: PruneResult,
   label: string,
-): void {
-  if (!existsSync(livePath)) return;
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  if (!(await pathExists(livePath, signal))) return;
   if (soft) {
     result.warnings.push(`Would remove ${label} (soft mode)`);
     return;
   }
-  rmSync(livePath, { recursive: true, force: true });
+  await withSignal(signal, () => rm(livePath, { recursive: true, force: true }));
   result.removed.push(label);
 }
 
-function safeReaddir(dir: string): string[] {
+async function safeReaddir(dir: string, signal?: AbortSignal): Promise<string[]> {
   try {
-    return readdirSync(dir);
-  } catch {
+    return await withSignal(signal, () => readdir(dir));
+  } catch (err) {
+    if (isAbortError(err)) throw err;
     return [];
   }
 }
 
-function walkFiles(dir: string, cb: (filePath: string) => void): void {
+async function walkFiles(
+  dir: string,
+  cb: (filePath: string) => void | Promise<void>,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
   let entries: string[];
   try {
-    entries = readdirSync(dir);
-  } catch {
+    entries = await withSignal(signal, () => readdir(dir));
+  } catch (err) {
+    if (isAbortError(err)) throw err;
     return;
   }
-  for (const entry of entries) {
-    const full = resolve(dir, entry);
-    let stat;
-    try {
-      stat = statSync(full);
-    } catch {
-      continue;
-    }
-    if (stat.isDirectory()) walkFiles(full, cb);
-    else if (stat.isFile()) cb(full);
-  }
+  await Promise.all(
+    entries.map(async (entry) => {
+      signal?.throwIfAborted();
+      const full = resolve(dir, entry);
+      let s;
+      try {
+        s = await withSignal(signal, () => stat(full));
+      } catch (err) {
+        if (isAbortError(err)) throw err;
+        return;
+      }
+      if (s.isDirectory()) await walkFiles(full, cb, signal);
+      else if (s.isFile()) await cb(full);
+    }),
+  );
 }
 
 export function isPreserved(filename: string, structure: StructureConfig): boolean {

@@ -65,7 +65,7 @@ describe('pruner — nested layout', () => {
   let ws: Workspace;
   let cache: ShakerCache;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     ws = createWorkspace();
     ws.installFixturePackage('gadget-nested', '@example/test-app');
     cache = new ShakerCache(
@@ -73,19 +73,19 @@ describe('pruner — nested layout', () => {
       '@example/test-app',
       ws.root,
     );
-    cache.prime();
+    await cache.prime();
   });
 
   afterEach(() => ws.cleanup());
 
-  it('removes a member not in usage map', () => {
+  it('removes a member not in usage map', async () => {
     const usageMap: UsageMap = {
       members: new Set(['shopProduct']),
       operations: new Set(['shopProduct.update']),
       files: new Set(),
     };
 
-    const result = prune({
+    const result = await prune({
       usageMap,
       config: buildResolved('@example/test-app', NESTED_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -100,14 +100,14 @@ describe('pruner — nested layout', () => {
     expect(result.removed.length).toBeGreaterThan(0);
   });
 
-  it('removes unused operation files but keeps allowed ones', () => {
+  it('removes unused operation files but keeps allowed ones', async () => {
     const usageMap: UsageMap = {
       members: new Set(['shopProduct']),
       operations: new Set(['shopProduct.update']),
       files: new Set(),
     };
 
-    prune({
+    await prune({
       usageMap,
       config: buildResolved('@example/test-app', NESTED_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -126,14 +126,14 @@ describe('pruner — nested layout', () => {
     expect(existsSync(resolve(operationsDir, 'delete.js'))).toBe(false);
   });
 
-  it('restores files for symbols added to allow.include after they were removed', () => {
+  it('restores files for symbols added to allow.include after they were removed', async () => {
     const usageMap: UsageMap = {
       members: new Set(['shopProduct']),
       operations: new Set(['shopProduct.update']),
       files: new Set(),
     };
 
-    prune({
+    await prune({
       usageMap,
       config: buildResolved('@example/test-app', NESTED_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -142,7 +142,7 @@ describe('pruner — nested layout', () => {
     const liveMembers = resolve(cache.getLivePackageDir(), 'models');
     expect(existsSync(resolve(liveMembers, 'Customer'))).toBe(false);
 
-    const result = prune({
+    const result = await prune({
       usageMap,
       config: buildResolved('@example/test-app', NESTED_STRUCTURE, {
         include: ['customer.create'],
@@ -158,7 +158,7 @@ describe('pruner — nested layout', () => {
     expect(result.restored.length).toBeGreaterThan(0);
   });
 
-  it('restores file when usage map references a missing member', () => {
+  it('restores file when usage map references a missing member', async () => {
     const liveOrder = resolve(cache.getLivePackageDir(), 'models', 'ShopOrder');
     rmSync(liveOrder, { recursive: true, force: true });
 
@@ -168,7 +168,7 @@ describe('pruner — nested layout', () => {
       files: new Set(),
     };
 
-    prune({
+    await prune({
       usageMap,
       config: buildResolved('@example/test-app', NESTED_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -180,14 +180,14 @@ describe('pruner — nested layout', () => {
     expect(existsSync(resolve(liveOrder, 'actions', 'cancel.js'))).toBe(true);
   });
 
-  it('never removes preserve files', () => {
+  it('never removes preserve files', async () => {
     const usageMap: UsageMap = {
       members: new Set(),
       operations: new Set(),
       files: new Set(),
     };
 
-    prune({
+    await prune({
       usageMap,
       config: buildResolved('@example/test-app', NESTED_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -201,7 +201,7 @@ describe('pruner — nested layout', () => {
     expect(existsSync(resolve(live, 'package.json'))).toBe(true);
   });
 
-  it('soft mode warns but does not delete; still restores', () => {
+  it('soft mode warns but does not delete; still restores', async () => {
     const liveCustomer = resolve(
       cache.getLivePackageDir(),
       'models',
@@ -215,7 +215,7 @@ describe('pruner — nested layout', () => {
       files: new Set(),
     };
 
-    const result = prune({
+    const result = await prune({
       usageMap,
       config: buildResolved('@example/test-app', NESTED_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -230,14 +230,14 @@ describe('pruner — nested layout', () => {
     expect(result.removed.length).toBe(0);
   });
 
-  it('returns an accurate PruneResult', () => {
+  it('returns an accurate PruneResult', async () => {
     const usageMap: UsageMap = {
       members: new Set(['shopProduct']),
       operations: new Set(['shopProduct.update']),
       files: new Set(),
     };
 
-    const result = prune({
+    const result = await prune({
       usageMap,
       config: buildResolved('@example/test-app', NESTED_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -256,7 +256,7 @@ describe('pruner — flat layout', () => {
   let ws: Workspace;
   let cache: ShakerCache;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     ws = createWorkspace();
     ws.installFixturePackage('gadget-flat', '@example/flat-app');
     cache = new ShakerCache(
@@ -264,19 +264,19 @@ describe('pruner — flat layout', () => {
       '@example/flat-app',
       ws.root,
     );
-    cache.prime();
+    await cache.prime();
   });
 
   afterEach(() => ws.cleanup());
 
-  it('removes unused member files in a flat layout', () => {
+  it('removes unused member files in a flat layout', async () => {
     const usageMap: UsageMap = {
       members: new Set(['shopProduct']),
       operations: new Set(),
       files: new Set(),
     };
 
-    prune({
+    await prune({
       usageMap,
       config: buildResolved('@example/flat-app', FLAT_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -289,14 +289,14 @@ describe('pruner — flat layout', () => {
     expect(existsSync(resolve(liveMembers, 'Customer.js'))).toBe(false);
   });
 
-  it('matches kebab-case filenames against camelCase usage symbols', () => {
+  it('matches kebab-case filenames against camelCase usage symbols', async () => {
     ws.installFixturePackage('apollo-flat', '@example/kebab-client');
     const apolloCache = new ShakerCache(
       '.pkg-optimize-cache',
       '@example/kebab-client',
       ws.root,
     );
-    apolloCache.prime();
+    await apolloCache.prime();
 
     const usageMap: UsageMap = {
       members: new Set(['GetProduct', 'UpdateProduct']),
@@ -304,7 +304,7 @@ describe('pruner — flat layout', () => {
       files: new Set(),
     };
 
-    prune({
+    await prune({
       usageMap,
       config: buildResolved('@example/kebab-client', KEBAB_FLAT_STRUCTURE),
       sourceDir: apolloCache.getCachedPackageDir(),
@@ -325,7 +325,7 @@ describe('pruner — barrel layout', () => {
   });
   afterEach(() => ws.cleanup());
 
-  it('emits a warning and skips for barrel layout', () => {
+  it('emits a warning and skips for barrel layout', async () => {
     const pkgRoot = resolve(ws.root, 'node_modules', 'barrel-pkg');
     mkdirSync(pkgRoot, { recursive: true });
     writeFileSync(
@@ -335,9 +335,9 @@ describe('pruner — barrel layout', () => {
     writeFileSync(resolve(pkgRoot, 'index.js'), `export const api = {};`);
 
     const cache = new ShakerCache('.pkg-optimize-cache', 'barrel-pkg', ws.root);
-    cache.prime();
+    await cache.prime();
 
-    const result = prune({
+    const result = await prune({
       usageMap: { members: new Set(), operations: new Set(), files: new Set() },
       config: buildResolved('barrel-pkg', {
         layout: 'barrel',

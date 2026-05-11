@@ -18,44 +18,44 @@ describe('detector', () => {
   });
   afterEach(() => ws.cleanup());
 
-  it('infers nested layout from a fixture with member/<Name>/<sub>/ subdirs', () => {
+  it('infers nested layout from a fixture with member/<Name>/<sub>/ subdirs', async () => {
     const pkgDir = ws.installFixturePackage(
       'gadget-nested',
       '@example/test-app',
     );
-    expect(detectLayout(pkgDir)).toBe('nested');
+    expect(await detectLayout(pkgDir)).toBe('nested');
   });
 
-  it('infers flat layout from a fixture with member files only', () => {
+  it('infers flat layout from a fixture with member files only', async () => {
     const pkgDir = ws.installFixturePackage(
       'gadget-flat',
       '@example/flat-app',
     );
-    expect(detectLayout(pkgDir)).toBe('flat');
+    expect(await detectLayout(pkgDir)).toBe('flat');
   });
 
-  it('detects member dir', () => {
+  it('detects member dir', async () => {
     const pkgDir = ws.installFixturePackage(
       'gadget-flat',
       '@example/flat-app',
     );
-    expect(detectMemberDir(pkgDir, 'flat')).toBe('models');
+    expect(await detectMemberDir(pkgDir, 'flat')).toBe('models');
   });
 
-  it('infers PascalCase naming from filenames', () => {
+  it('infers PascalCase naming from filenames', async () => {
     const pkgDir = ws.installFixturePackage(
       'gadget-flat',
       '@example/flat-app',
     );
-    expect(detectNaming(pkgDir, 'flat', 'models')).toBe('PascalCase');
+    expect(await detectNaming(pkgDir, 'flat', 'models')).toBe('PascalCase');
   });
 
-  it('infers kebab-case naming from kebab-style fixtures', () => {
+  it('infers kebab-case naming from kebab-style fixtures', async () => {
     const pkgDir = ws.installFixturePackage(
       'apollo-flat',
       '@example/kebab-app',
     );
-    expect(detectNaming(pkgDir, 'flat', 'operations')).toBe('kebab-case');
+    expect(await detectNaming(pkgDir, 'flat', 'operations')).toBe('kebab-case');
   });
 
   it('matches Gadget preset for @gadget-client/* package names', () => {
@@ -114,13 +114,13 @@ describe('detector', () => {
     expect(matchPreset('@radix-ui/react-dialog')?.packageStructure?.layout).toBe('destructure');
   });
 
-  it('infers destructure layout for a barrel-of-named-exports package', () => {
+  it('infers destructure layout for a barrel-of-named-exports package', async () => {
     const pkgDir = ws.installFixturePackage(
       'destructure-flat',
       '@example/destructure-pkg',
     );
-    expect(detectLayout(pkgDir)).toBe('destructure');
-    expect(detectMemberDir(pkgDir, 'destructure')).toBe('.');
+    expect(await detectLayout(pkgDir)).toBe('destructure');
+    expect(await detectMemberDir(pkgDir, 'destructure')).toBe('.');
   });
 
   it('still classifies a single-file barrel as "barrel"', async () => {
@@ -134,7 +134,7 @@ describe('detector', () => {
       resolve(pkgRoot, 'index.js'),
       `export const a = 1; export const b = 2;`,
     );
-    expect(detectLayout(pkgRoot)).toBe('barrel');
+    expect(await detectLayout(pkgRoot)).toBe('barrel');
   });
 
   it('produces a full DetectedConfig from a fixture package', async () => {

@@ -54,25 +54,25 @@ describe('scanner — import tracking', () => {
   });
   afterEach(() => ws.cleanup());
 
-  it('records named imports as members', () => {
+  it('records named imports as members', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(f, `import { debounce, throttle } from 'lodash-es';`);
     const usage = emptyUsage();
-    scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: 'lodash-es' });
+    await scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: 'lodash-es' });
     expect(usage.members.has('debounce')).toBe(true);
     expect(usage.members.has('throttle')).toBe(true);
   });
 
-  it('uses the imported name (not the local alias)', () => {
+  it('uses the imported name (not the local alias)', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(f, `import { debounce as d } from 'lodash-es';`);
     const usage = emptyUsage();
-    scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: 'lodash-es' });
+    await scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: 'lodash-es' });
     expect(usage.members.has('debounce')).toBe(true);
     expect(usage.members.has('d')).toBe(false);
   });
 
-  it('binds default imports as a dynamic namespace for member access', () => {
+  it('binds default imports as a dynamic namespace for member access', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(
       f,
@@ -81,7 +81,7 @@ describe('scanner — import tracking', () => {
        _.throttle(() => {}, 100);`,
     );
     const usage = emptyUsage();
-    scanFile(
+    await scanFile(
       f,
       { ...DESTRUCTURE_PATTERNS, namespace: 'irrelevant' },
       usage,
@@ -91,7 +91,7 @@ describe('scanner — import tracking', () => {
     expect(usage.members.has('throttle')).toBe(true);
   });
 
-  it('binds namespace imports (`import * as X`) the same way', () => {
+  it('binds namespace imports (`import * as X`) the same way', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(
       f,
@@ -100,12 +100,12 @@ describe('scanner — import tracking', () => {
        dateFns.parseISO('2024-01-01');`,
     );
     const usage = emptyUsage();
-    scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: 'date-fns' });
+    await scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: 'date-fns' });
     expect(usage.members.has('format')).toBe(true);
     expect(usage.members.has('parseISO')).toBe(true);
   });
 
-  it('records deep imports as file references', () => {
+  it('records deep imports as file references', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(
       f,
@@ -113,30 +113,30 @@ describe('scanner — import tracking', () => {
        import addDays from 'date-fns/addDays';`,
     );
     const usage = emptyUsage();
-    scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: 'date-fns' });
+    await scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: 'date-fns' });
     expect(usage.files.has('format')).toBe(true);
     expect(usage.files.has('addDays')).toBe(true);
   });
 
-  it('records side-effect imports as file references', () => {
+  it('records side-effect imports as file references', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(f, `import 'react-spectrum/Button/style.css';`);
     const usage = emptyUsage();
-    scanFile(f, DESTRUCTURE_PATTERNS, usage, {
+    await scanFile(f, DESTRUCTURE_PATTERNS, usage, {
       targetPackage: 'react-spectrum',
     });
     expect(usage.files.has('Button/style')).toBe(true);
   });
 
-  it('strips the file extension from deep import paths', () => {
+  it('strips the file extension from deep import paths', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(f, `import x from 'pkg/sub/file.mjs';`);
     const usage = emptyUsage();
-    scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: 'pkg' });
+    await scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: 'pkg' });
     expect(usage.files.has('sub/file')).toBe(true);
   });
 
-  it('ignores imports from packages other than the target', () => {
+  it('ignores imports from packages other than the target', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(
       f,
@@ -145,17 +145,17 @@ describe('scanner — import tracking', () => {
        import { Button } from '@my/ui';`,
     );
     const usage = emptyUsage();
-    scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: 'lodash-es' });
+    await scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: 'lodash-es' });
     expect(usage.members.has('debounce')).toBe(true);
     expect(usage.members.has('useState')).toBe(false);
     expect(usage.members.has('Button')).toBe(false);
   });
 
-  it('does no import tracking when targetPackage is omitted', () => {
+  it('does no import tracking when targetPackage is omitted', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(f, `import { debounce } from 'lodash-es';`);
     const usage = emptyUsage();
-    scanFile(f, DESTRUCTURE_PATTERNS, usage);
+    await scanFile(f, DESTRUCTURE_PATTERNS, usage);
     expect(usage.members.size).toBe(0);
   });
 });
@@ -164,7 +164,7 @@ describe('pruner — destructure layout', () => {
   let ws: Workspace;
   let cache: ShakerCache;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     ws = createWorkspace();
     ws.installFixturePackage('destructure-flat', '@example/destructure-pkg');
     cache = new ShakerCache(
@@ -172,19 +172,19 @@ describe('pruner — destructure layout', () => {
       '@example/destructure-pkg',
       ws.root,
     );
-    cache.prime();
+    await cache.prime();
   });
 
   afterEach(() => ws.cleanup());
 
-  it('removes top-level files not in the usage map', () => {
+  it('removes top-level files not in the usage map', async () => {
     const usage: UsageMap = {
       members: new Set(['debounce', 'map']),
       operations: new Set(),
       files: new Set(),
     };
 
-    prune({
+    await prune({
       usageMap: usage,
       config: buildResolved('@example/destructure-pkg', DESTRUCTURE_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -202,14 +202,14 @@ describe('pruner — destructure layout', () => {
     expect(existsSync(resolve(live, 'package.json'))).toBe(true); // preserved
   });
 
-  it('keeps a top-level file referenced via deep import (usageMap.files)', () => {
+  it('keeps a top-level file referenced via deep import (usageMap.files)', async () => {
     const usage: UsageMap = {
       members: new Set(),
       operations: new Set(),
       files: new Set(['debounce']),
     };
 
-    prune({
+    await prune({
       usageMap: usage,
       config: buildResolved('@example/destructure-pkg', DESTRUCTURE_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -221,14 +221,14 @@ describe('pruner — destructure layout', () => {
     expect(existsSync(resolve(live, 'throttle.js'))).toBe(false);
   });
 
-  it('restores a previously-removed file when it shows back up in usage', () => {
+  it('restores a previously-removed file when it shows back up in usage', async () => {
     const usage1: UsageMap = {
       members: new Set(['debounce']),
       operations: new Set(),
       files: new Set(),
     };
 
-    prune({
+    await prune({
       usageMap: usage1,
       config: buildResolved('@example/destructure-pkg', DESTRUCTURE_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -242,7 +242,7 @@ describe('pruner — destructure layout', () => {
       files: new Set(),
     };
 
-    const result = prune({
+    const result = await prune({
       usageMap: usage2,
       config: buildResolved('@example/destructure-pkg', DESTRUCTURE_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -253,14 +253,14 @@ describe('pruner — destructure layout', () => {
     expect(result.restored.length).toBeGreaterThan(0);
   });
 
-  it('handles allow.include with explicit file paths', () => {
+  it('handles allow.include with explicit file paths', async () => {
     const usage: UsageMap = {
       members: new Set(),
       operations: new Set(),
       files: new Set(),
     };
 
-    prune({
+    await prune({
       usageMap: usage,
       config: buildResolved(
         '@example/destructure-pkg',
@@ -283,7 +283,7 @@ describe('pruner — destructure layout with subdirs', () => {
   let ws: Workspace;
   let cache: ShakerCache;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     ws = createWorkspace();
     ws.installFixturePackage('destructure-mixed', '@example/mixed-pkg');
     cache = new ShakerCache(
@@ -291,19 +291,19 @@ describe('pruner — destructure layout with subdirs', () => {
       '@example/mixed-pkg',
       ws.root,
     );
-    cache.prime();
+    await cache.prime();
   });
 
   afterEach(() => ws.cleanup());
 
-  it('keeps directory members and removes the rest', () => {
+  it('keeps directory members and removes the rest', async () => {
     const usage: UsageMap = {
       members: new Set(['format', 'addDays']),
       operations: new Set(),
       files: new Set(),
     };
 
-    prune({
+    await prune({
       usageMap: usage,
       config: buildResolved('@example/mixed-pkg', DESTRUCTURE_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),
@@ -318,14 +318,14 @@ describe('pruner — destructure layout with subdirs', () => {
     expect(existsSync(resolve(live, 'locale'))).toBe(false);
   });
 
-  it('keeps a directory referenced via a deep import file ref', () => {
+  it('keeps a directory referenced via a deep import file ref', async () => {
     const usage: UsageMap = {
       members: new Set(),
       operations: new Set(),
       files: new Set(['format', 'locale/index']),
     };
 
-    prune({
+    await prune({
       usageMap: usage,
       config: buildResolved('@example/mixed-pkg', DESTRUCTURE_STRUCTURE),
       sourceDir: cache.getCachedPackageDir(),

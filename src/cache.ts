@@ -1,34 +1,50 @@
-import { cpSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import { cp, mkdir, rm, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { isAbortError, pathExists, withSignal } from './utils.js';
 
 export class ShakerCache {
   private readonly packageDir: string;
   private readonly cachedPackageDir: string;
+  /**
+   * Serialize mutating operations (`prime` / `reprime`). The sync `*Sync` APIs
+   * the watcher used to call were naturally serialized by Node's single
+   * thread; with async APIs, two chokidar events firing in quick succession
+   * could otherwise interleave `rm` + `cp` and corrupt the cache.
+   */
+  private inflight: Promise<unknown> = Promise.resolve();
 
   constructor(cacheBaseDir: string, targetPackage: string, projectRoot: string) {
     this.packageDir = resolve(projectRoot, 'node_modules', targetPackage);
     this.cachedPackageDir = resolve(projectRoot, cacheBaseDir, targetPackage);
   }
 
-  isCached(): boolean {
-    return existsSync(this.cachedPackageDir);
+  isCached(): Promise<boolean> {
+    return pathExists(this.cachedPackageDir);
   }
 
-  livePackageExists(): boolean {
-    return existsSync(this.packageDir);
+  livePackageExists(): Promise<boolean> {
+    return pathExists(this.packageDir);
   }
 
   /** Copy the live package into cache. Called on first run. */
-  prime(): void {
-    if (!this.livePackageExists()) {
-      throw new Error(
-        `Cannot prime cache: package not found at ${this.packageDir}. Has it been installed?`,
+  prime(opts?: { signal?: AbortSignal }): Promise<void> {
+    const signal = opts?.signal;
+    return this.enqueue(async () => {
+      opts?.signal?.throwIfAborted();
+      if (!(await pathExists(this.packageDir, signal))) {
+        throw new Error(
+          `Cannot prime cache: package not found at ${this.packageDir}. Has it been installed?`,
+        );
+      }
+      await withSignal(signal, () =>
+        mkdir(this.cachedPackageDir, { recursive: true }),
       );
-    }
-    mkdirSync(this.cachedPackageDir, { recursive: true });
-    cpSync(this.packageDir, this.cachedPackageDir, {
-      recursive: true,
-      force: true,
+      await withSignal(signal, () =>
+        cp(this.packageDir, this.cachedPackageDir, {
+          recursive: true,
+          force: true,
+        }),
+      );
     });
   }
 
@@ -43,36 +59,48 @@ export class ShakerCache {
    * because tools like `ggt`, graphql-codegen, etc. regenerate files inside
    * a linked package without touching its `package.json`.
    */
-  reprime(opts?: { force?: boolean }): boolean {
-    if (!this.livePackageExists()) return false;
+  reprime(opts?: { force?: boolean; signal?: AbortSignal }): Promise<boolean> {
+    const signal = opts?.signal;
+    return this.enqueue(async () => {
+      opts?.signal?.throwIfAborted();
+      if (!(await pathExists(this.packageDir, signal))) return false;
 
-    if (!opts?.force) {
-      const livePkgJson = resolve(this.packageDir, 'package.json');
-      const cachedPkgJson = resolve(this.cachedPackageDir, 'package.json');
+      if (!opts?.force) {
+        const livePkgJson = resolve(this.packageDir, 'package.json');
+        const cachedPkgJson = resolve(this.cachedPackageDir, 'package.json');
 
-      let liveMtime = 0;
-      let cacheMtime = 0;
-      try {
-        liveMtime = statSync(livePkgJson).mtimeMs;
-      } catch {
-        return false;
+        let liveMtime = 0;
+        let cacheMtime = 0;
+        try {
+          liveMtime = (await withSignal(signal, () => stat(livePkgJson))).mtimeMs;
+        } catch (err) {
+          if (isAbortError(err)) throw err;
+          return false;
+        }
+        try {
+          cacheMtime = (await withSignal(signal, () => stat(cachedPkgJson))).mtimeMs;
+        } catch (err) {
+          if (isAbortError(err)) throw err;
+          cacheMtime = 0;
+        }
+
+        if (liveMtime <= cacheMtime) return false;
       }
-      try {
-        cacheMtime = statSync(cachedPkgJson).mtimeMs;
-      } catch {
-        cacheMtime = 0;
-      }
 
-      if (liveMtime <= cacheMtime) return false;
-    }
-
-    rmSync(this.cachedPackageDir, { recursive: true, force: true });
-    mkdirSync(this.cachedPackageDir, { recursive: true });
-    cpSync(this.packageDir, this.cachedPackageDir, {
-      recursive: true,
-      force: true,
+      await withSignal(signal, () =>
+        rm(this.cachedPackageDir, { recursive: true, force: true }),
+      );
+      await withSignal(signal, () =>
+        mkdir(this.cachedPackageDir, { recursive: true }),
+      );
+      await withSignal(signal, () =>
+        cp(this.packageDir, this.cachedPackageDir, {
+          recursive: true,
+          force: true,
+        }),
+      );
+      return true;
     });
-    return true;
   }
 
   getCachedPackageDir(): string {
@@ -81,5 +109,16 @@ export class ShakerCache {
 
   getLivePackageDir(): string {
     return this.packageDir;
+  }
+
+  private enqueue<T>(op: () => Promise<T>): Promise<T> {
+    const next = this.inflight.then(op, op);
+    // Swallow rejections on the chain so a single failure doesn't poison
+    // every subsequent operation; the caller still sees the rejection.
+    this.inflight = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
   }
 }

@@ -1,9 +1,9 @@
 import chokidar from 'chokidar';
 import _debounce from 'lodash.debounce';
-import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ShakerCache } from './cache.js';
 import { loadConfig, writeConfig } from './config.js';
+import { pathExists } from './utils.js';
 import { log } from './logger.js';
 import { prune } from './pruner.js';
 import { resolvePackageConfig } from './resolver.js';
@@ -17,29 +17,40 @@ export interface StartWatcherOptions {
   config: ShakerConfig;
   configPath: string;
   projectRoot: string;
+  /** Cooperative cancellation for shutdown (SIGINT / SIGTERM / API). */
+  signal?: AbortSignal;
 }
 
 export async function startWatcher(options: StartWatcherOptions): Promise<() => Promise<void>> {
-  const { configPath, projectRoot } = options;
+  const { configPath, projectRoot, signal } = options;
   let { config } = options;
 
   let resolvedPackages = await resolveAllPackages(config, projectRoot);
 
   // Prime caches and run an initial prune.
   for (const pkg of resolvedPackages) {
+    signal?.throwIfAborted();
     const cache = new ShakerCache(pkg.cache.dir, pkg.targetPackage, projectRoot);
-    if (!cache.isCached() && cache.livePackageExists()) cache.prime();
-    await runPruneForPackage(pkg, projectRoot, 'initial', { soft: pkg.watch.softPruneInDev });
+    if (!(await cache.isCached()) && (await cache.livePackageExists())) {
+      await cache.prime({ signal });
+    }
+    await runPruneForPackage(pkg, projectRoot, 'initial', { soft: pkg.watch.softPruneInDev }, signal);
   }
 
-  writeDetectedToConfig(config, resolvedPackages, configPath);
+  await writeDetectedToConfig(config, resolvedPackages, configPath, signal);
 
   const packagePruners = new Map<string, ReturnType<typeof debounce>>();
   for (const pkg of resolvedPackages) {
     packagePruners.set(
       pkg.targetPackage,
       debounce((reason: string) => {
-        runPruneForPackage(pkg, projectRoot, reason, { soft: pkg.watch.softPruneInDev });
+        void (async () => {
+          try {
+            await runPruneForPackage(pkg, projectRoot, reason, { soft: pkg.watch.softPruneInDev }, signal);
+          } catch (err) {
+            log.error(`[${pkg.targetPackage}] prune failed: ${(err as Error).message}`);
+          }
+        })();
       }, pkg.watch.debounceMs),
     );
   }
@@ -49,11 +60,13 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
     300,
   );
   const allPackagesPruner = debounce(async (reason: string) => {
+    signal?.throwIfAborted();
     log.info(`Re-scanning all packages (${reason})...`);
     for (const pkg of resolvedPackages) {
+      signal?.throwIfAborted();
       await runPruneForPackage(pkg, projectRoot, reason, {
         soft: pkg.watch.softPruneInDev,
-      });
+      }, signal);
     }
   }, minDebounce);
 
@@ -61,7 +74,7 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
   for (const pkg of resolvedPackages) {
     const cache = new ShakerCache(pkg.cache.dir, pkg.targetPackage, projectRoot);
     const packageDir = resolve(projectRoot, 'node_modules', pkg.targetPackage);
-    if (!existsSync(packageDir)) continue;
+    if (!(await pathExists(packageDir, signal))) continue;
 
     const watcher = chokidar
       .watch(packageDir, { ignoreInitial: true, ignored: /\.pkg-optimize-cache/ })
@@ -77,20 +90,34 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
           event === 'unlink' ||
           event === 'addDir' ||
           event === 'unlinkDir';
-        const reprimed = cache.reprime({ force: fileSetChanged });
-        if (reprimed) {
-          log.info(`[${pkg.targetPackage}] package changed externally — re-priming cache`);
-          packagePruners.get(pkg.targetPackage)?.('package updated');
-        }
+        // `ShakerCache` serializes its own operations internally, so racing
+        // chokidar events can't interleave `rm` + `cp` and corrupt the cache.
+        void (async () => {
+          try {
+            const reprimed = await cache.reprime({ force: fileSetChanged, signal });
+            if (reprimed) {
+              log.info(
+                `[${pkg.targetPackage}] package changed externally — re-priming cache`,
+              );
+              packagePruners.get(pkg.targetPackage)?.('package updated');
+            }
+          } catch (err) {
+            log.error(
+              `[${pkg.targetPackage}] cache reprime failed: ${(err as Error).message}`,
+            );
+          }
+        })();
       });
     packageWatchers.push(watcher);
   }
 
-  const allScanDirs = [
+  const candidateScanDirs = [
     ...new Set(resolvedPackages.flatMap((p) => p.scanDirs)),
-  ]
-    .map((d) => resolve(projectRoot, d))
-    .filter((d) => existsSync(d));
+  ].map((d) => resolve(projectRoot, d));
+  const scanDirExistence = await Promise.all(
+    candidateScanDirs.map((d) => pathExists(d, signal)),
+  );
+  const allScanDirs = candidateScanDirs.filter((_, i) => scanDirExistence[i]);
 
   const sourceWatcher = chokidar
     .watch(allScanDirs, { ignoreInitial: true, ignored: /node_modules/ })
@@ -99,15 +126,17 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
   const configWatcher = chokidar
     .watch(configPath, { ignoreInitial: true })
     .on('change', async () => {
+      if (signal?.aborted) return;
       log.info('Config changed — reloading and re-running all packages...');
       try {
-        const next = loadConfig(projectRoot);
+        const next = await loadConfig(projectRoot);
         config = next.config;
         resolvedPackages = await resolveAllPackages(config, projectRoot);
         for (const pkg of resolvedPackages) {
+          signal?.throwIfAborted();
           await runPruneForPackage(pkg, projectRoot, 'config changed', {
             soft: pkg.watch.softPruneInDev,
-          });
+          }, signal);
         }
       } catch (err) {
         log.error(`Failed to reload config: ${(err as Error).message}`);
@@ -119,6 +148,8 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
   );
 
   return async function stop() {
+    for (const d of packagePruners.values()) d.cancel();
+    allPackagesPruner.cancel();
     await Promise.all(packageWatchers.map((w) => w.close()));
     await sourceWatcher.close();
     await configWatcher.close();
@@ -130,25 +161,30 @@ async function runPruneForPackage(
   projectRoot: string,
   reason: string,
   opts: { soft: boolean },
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted();
   log.info(`[${pkg.targetPackage}] Re-scanning (${reason})...`);
   const cache = new ShakerCache(pkg.cache.dir, pkg.targetPackage, projectRoot);
-  if (!cache.isCached()) {
-    if (cache.livePackageExists()) cache.prime();
-    else {
+  if (!(await cache.isCached())) {
+    if (await cache.livePackageExists()) {
+      await cache.prime({ signal });
+    } else {
       log.warn(`[${pkg.targetPackage}] package not installed — skipping`);
       return;
     }
   }
-  const usageMap = scanDirs(pkg.scanDirs, projectRoot, pkg.patterns, {
+  const usageMap = await scanDirs(pkg.scanDirs, projectRoot, pkg.patterns, {
     targetPackage: pkg.targetPackage,
+    signal,
   });
-  const result = prune({
+  const result = await prune({
     usageMap,
     config: pkg,
     sourceDir: cache.getCachedPackageDir(),
     targetDir: cache.getLivePackageDir(),
     soft: opts.soft,
+    signal,
   });
   log.result(result);
 }
@@ -162,11 +198,12 @@ async function resolveAllPackages(
   );
 }
 
-function writeDetectedToConfig(
+async function writeDetectedToConfig(
   config: ShakerConfig,
   resolved: ResolvedPackageConfig[],
   configPath: string,
-): void {
+  signal?: AbortSignal,
+): Promise<void> {
   let dirty = false;
   const updated = {
     ...config,
@@ -178,5 +215,7 @@ function writeDetectedToConfig(
       return pkg;
     }),
   };
-  if (dirty && existsSync(configPath)) writeConfig(updated, configPath);
+  if (dirty && (await pathExists(configPath, signal))) {
+    await writeConfig(updated, configPath);
+  }
 }
