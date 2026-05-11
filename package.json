@@ -1,6 +1,6 @@
 {
   "name": "pkg-optimize",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Zero-config tree-shaker for any npm package whose files are independently importable. Prunes unused files from one or more target packages based on what your source code actually references — generated SDK clients, codegen output, and general-purpose libraries alike.",
   "type": "module",
   "main": "./dist/index.cjs",
