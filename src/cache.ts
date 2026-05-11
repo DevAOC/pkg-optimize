@@ -43,6 +43,10 @@ export class ShakerCache {
         cp(this.packageDir, this.cachedPackageDir, {
           recursive: true,
           force: true,
+          // `node_modules/<pkg>` is often a symlink (pnpm, hoists). Without
+          // dereferencing, `cp` treats the symlink as a non-directory source
+          // and fails with ERR_FS_CP_NON_DIR_TO_DIR after we mkdir the dest.
+          dereference: true,
         }),
       );
     });
@@ -97,6 +101,7 @@ export class ShakerCache {
         cp(this.packageDir, this.cachedPackageDir, {
           recursive: true,
           force: true,
+          dereference: true,
         }),
       );
       return true;

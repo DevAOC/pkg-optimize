@@ -129,3 +129,60 @@ describe('ShakerCache.reprime', () => {
     expect(cachedEntries).not.toContain('ShopOrder');
   });
 });
+
+describe('ShakerCache with symlinked live package', () => {
+  let ws: Workspace;
+  let cache: ShakerCache;
+
+  beforeEach(async () => {
+    ws = createWorkspace();
+    ws.installFixturePackageSymlinked(
+      'gadget-nested',
+      '@gadget-client/test-app',
+    );
+    cache = new ShakerCache(
+      '.pkg-optimize-cache',
+      '@gadget-client/test-app',
+      ws.root,
+    );
+    await cache.prime();
+  });
+
+  afterEach(() => ws.cleanup());
+
+  it('primes without ERR_FS_CP_NON_DIR_TO_DIR (pnpm-style symlink)', async () => {
+    const cachedPkgJson = resolve(
+      cache.getCachedPackageDir(),
+      'package.json',
+    );
+    expect(existsSync(cachedPkgJson)).toBe(true);
+  });
+
+  it('reprimes when forced', async () => {
+    const livePkgDir = resolve(
+      ws.root,
+      'node_modules',
+      '@gadget-client',
+      'test-app',
+    );
+    mkdirSync(resolve(livePkgDir, 'models', 'SymlinkOnly'), {
+      recursive: true,
+    });
+    writeFileSync(
+      resolve(livePkgDir, 'models', 'SymlinkOnly', 'SymlinkOnly.js'),
+      'module.exports = {};',
+    );
+
+    expect(await cache.reprime({ force: true })).toBe(true);
+    expect(
+      existsSync(
+        resolve(
+          cache.getCachedPackageDir(),
+          'models',
+          'SymlinkOnly',
+          'SymlinkOnly.js',
+        ),
+      ),
+    ).toBe(true);
+  });
+});
