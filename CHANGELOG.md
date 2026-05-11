@@ -1,5 +1,11 @@
 # pkg-optimize
 
+## 0.2.1
+
+### Patch Changes
+
+- [#7](https://github.com/DevAOC/pkg-optimize/pull/7) [`350d57d`](https://github.com/DevAOC/pkg-optimize/commit/350d57d9db7ec918d719e3f3209eb1e7370e0d44) Thanks [@DevAOC](https://github.com/DevAOC)! - Fixed issue with symlink hoist in cache
+
 ## 0.2.0
 
 ### Minor Changes
