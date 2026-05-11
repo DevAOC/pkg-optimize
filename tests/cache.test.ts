@@ -16,7 +16,7 @@ describe('ShakerCache.reprime', () => {
   let cache: ShakerCache;
   let livePkgDir: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     ws = createWorkspace();
     livePkgDir = ws.installFixturePackage(
       'gadget-nested',
@@ -27,27 +27,27 @@ describe('ShakerCache.reprime', () => {
       '@gadget-client/test-app',
       ws.root,
     );
-    cache.prime();
+    await cache.prime();
   });
 
   afterEach(() => ws.cleanup());
 
-  it('returns false when nothing has changed', () => {
-    expect(cache.reprime()).toBe(false);
+  it('returns false when nothing has changed', async () => {
+    expect(await cache.reprime()).toBe(false);
   });
 
-  it('reprimes when package.json mtime is newer (the install case)', () => {
+  it('reprimes when package.json mtime is newer (the install case)', async () => {
     const livePkgJson = resolve(livePkgDir, 'package.json');
     const future = new Date(Date.now() + 60_000);
     utimesSync(livePkgJson, future, future);
 
-    expect(cache.reprime()).toBe(true);
+    expect(await cache.reprime()).toBe(true);
   });
 
   it(
     'does NOT reprime by default when only model files change ' +
       '(the bug we are fixing — covered by force: true below)',
-    () => {
+    async () => {
       // Simulate `ggt` adding a new model: write into the live dir without
       // touching package.json. Without `force`, the mtime fast path returns
       // false and the cache stays stale.
@@ -57,7 +57,7 @@ describe('ShakerCache.reprime', () => {
         'module.exports = {};',
       );
 
-      expect(cache.reprime()).toBe(false);
+      expect(await cache.reprime()).toBe(false);
 
       const cachedNewModel = resolve(
         cache.getCachedPackageDir(),
@@ -68,14 +68,14 @@ describe('ShakerCache.reprime', () => {
     },
   );
 
-  it('reprimes when forced — picks up newly-added model files', () => {
+  it('reprimes when forced — picks up newly-added model files', async () => {
     mkdirSync(resolve(livePkgDir, 'models', 'NewModel'), { recursive: true });
     writeFileSync(
       resolve(livePkgDir, 'models', 'NewModel', 'NewModel.js'),
       'module.exports = {};',
     );
 
-    expect(cache.reprime({ force: true })).toBe(true);
+    expect(await cache.reprime({ force: true })).toBe(true);
 
     const cachedNewModel = resolve(
       cache.getCachedPackageDir(),
@@ -86,7 +86,7 @@ describe('ShakerCache.reprime', () => {
     expect(existsSync(cachedNewModel)).toBe(true);
   });
 
-  it('reprimes when forced — drops models that were removed from live', () => {
+  it('reprimes when forced — drops models that were removed from live', async () => {
     // Confirm Customer is in cache from the initial prime.
     const cachedCustomer = resolve(
       cache.getCachedPackageDir(),
@@ -101,16 +101,16 @@ describe('ShakerCache.reprime', () => {
       force: true,
     });
 
-    expect(cache.reprime({ force: true })).toBe(true);
+    expect(await cache.reprime({ force: true })).toBe(true);
     expect(existsSync(cachedCustomer)).toBe(false);
   });
 
-  it('forced reprime returns false when the live package is missing', () => {
+  it('forced reprime returns false when the live package is missing', async () => {
     rmSync(livePkgDir, { recursive: true, force: true });
-    expect(cache.reprime({ force: true })).toBe(false);
+    expect(await cache.reprime({ force: true })).toBe(false);
   });
 
-  it('forced reprime fully replaces the cache (no stale entries left over)', () => {
+  it('forced reprime fully replaces the cache (no stale entries left over)', async () => {
     rmSync(resolve(livePkgDir, 'models', 'ShopOrder'), {
       recursive: true,
       force: true,
@@ -121,7 +121,7 @@ describe('ShakerCache.reprime', () => {
       'module.exports = {};',
     );
 
-    expect(cache.reprime({ force: true })).toBe(true);
+    expect(await cache.reprime({ force: true })).toBe(true);
 
     const cachedModels = resolve(cache.getCachedPackageDir(), 'models');
     const cachedEntries = readdirSync(cachedModels);

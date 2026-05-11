@@ -11,7 +11,7 @@ describe('config', () => {
   });
   afterEach(() => ws.cleanup());
 
-  it('finds config by walking up from a nested cwd', () => {
+  it('finds config by walking up from a nested cwd', async () => {
     const configPath = resolve(ws.root, 'pkg-optimize.config.json');
     writeFileSync(
       configPath,
@@ -19,7 +19,7 @@ describe('config', () => {
     );
     const nested = resolve(ws.root, 'a', 'b', 'c');
     mkdirSync(nested, { recursive: true });
-    expect(findConfig(nested)).toBe(configPath);
+    expect(await findConfig(nested)).toBe(configPath);
   });
 
   it('throws clearly on missing packages field', () => {
@@ -32,8 +32,8 @@ describe('config', () => {
     ).toThrow();
   });
 
-  it('applies top-level scanDirs to packages that do not define their own', () => {
-    const cfg = applyTopLevelDefaults(
+  it('applies top-level scanDirs to packages that do not define their own', async () => {
+    const cfg = await applyTopLevelDefaults(
       {
         scanDirs: ['web'],
         packages: [
@@ -47,13 +47,13 @@ describe('config', () => {
     expect(cfg.packages[1].scanDirs).toEqual(['extensions']);
   });
 
-  it('returns a zero-config when no config file exists', () => {
-    const { config, configPath } = loadConfig(ws.root);
+  it('returns a zero-config when no config file exists', async () => {
+    const { config, configPath } = await loadConfig(ws.root);
     expect(config.packages).toEqual([]);
     expect(configPath).toBe(resolve(ws.root, 'pkg-optimize.config.json'));
   });
 
-  it('parses a valid config file from disk', () => {
+  it('parses a valid config file from disk', async () => {
     const configPath = ws.writeConfig({
       scanDirs: ['web'],
       packages: [
@@ -63,7 +63,7 @@ describe('config', () => {
         },
       ],
     });
-    const { config } = loadConfig(ws.root);
+    const { config } = await loadConfig(ws.root);
     expect(config.packages.length).toBe(1);
     expect(config.packages[0].targetPackage).toBe('@example/generated-client');
     expect(configPath).toBe(resolve(ws.root, 'pkg-optimize.config.json'));
@@ -131,11 +131,11 @@ describe('config', () => {
     ).not.toThrow();
   });
 
-  it('detects scan dirs from filesystem when none configured', () => {
+  it('detects scan dirs from filesystem when none configured', async () => {
     mkdirSync(resolve(ws.root, 'web'));
     mkdirSync(resolve(ws.root, 'src'));
     ws.writeConfig({ packages: [{ targetPackage: 'a' }] });
-    const { config } = loadConfig(ws.root);
+    const { config } = await loadConfig(ws.root);
     expect(config.scanDirs).toContain('web');
     expect(config.scanDirs).toContain('src');
   });

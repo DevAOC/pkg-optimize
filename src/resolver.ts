@@ -1,6 +1,6 @@
-import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { detectPackageConfig } from './detector.js';
+import { isDirectory } from './utils.js';
 import { loadPreset, matchPreset } from './presets/index.js';
 import type {
   PackageConfig,
@@ -61,7 +61,7 @@ export async function resolvePackageConfig(
       ? pkgConfig.scanDirs
       : topLevel.scanDirs && topLevel.scanDirs.length > 0
         ? topLevel.scanDirs
-        : detectScanDirs(projectRoot);
+        : await detectScanDirs(projectRoot);
 
   const cache = deepMerge(BUILT_IN_DEFAULTS.cache, topLevel.cache ?? {});
   const watch = deepMerge(BUILT_IN_DEFAULTS.watch, topLevel.watch ?? {});
@@ -103,13 +103,16 @@ export function deepMerge<T extends object>(...sources: Array<Partial<T> | objec
   return result as T;
 }
 
-function detectScanDirs(cwd: string): string[] {
+async function detectScanDirs(cwd: string): Promise<string[]> {
   const candidates = ['src', 'web', 'extensions', 'app'];
-  return candidates.filter((dir) => {
-    try {
-      return statSync(resolve(cwd, dir)).isDirectory();
-    } catch {
-      return false;
-    }
-  });
+  const checks = await Promise.all(
+    candidates.map(async (dir) => ({
+      dir,
+      isDir: await isDirectory(resolve(cwd, dir)),
+    })),
+  );
+  return checks.reduce<string[]>((acc, c) => {
+    if (c.isDir) acc.push(c.dir);
+    return acc;
+  }, []);
 }

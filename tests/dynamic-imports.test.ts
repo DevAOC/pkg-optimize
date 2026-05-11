@@ -48,56 +48,56 @@ describe('scanner — dynamic imports (string literal)', () => {
   });
   afterEach(() => ws.cleanup());
 
-  it('records await import("pkg/sub") as a file ref', () => {
+  it('records await import("pkg/sub") as a file ref', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(f, `const m = await import('lodash-es/debounce');`);
     const usage = emptyUsage();
-    scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
+    await scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
     expect(usage.files.has('debounce')).toBe(true);
     expect(usage.wildcard).not.toBe(true);
   });
 
-  it('records require("pkg/sub") as a file ref', () => {
+  it('records require("pkg/sub") as a file ref', async () => {
     const f = resolve(ws.root, 'a.cjs');
     writeFileSync(f, `const debounce = require('lodash-es/debounce');`);
     const usage = emptyUsage();
-    scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
+    await scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
     expect(usage.files.has('debounce')).toBe(true);
   });
 
-  it('records require.resolve("pkg/sub") as a file ref', () => {
+  it('records require.resolve("pkg/sub") as a file ref', async () => {
     const f = resolve(ws.root, 'a.cjs');
     writeFileSync(f, `const path = require.resolve('lodash-es/throttle');`);
     const usage = emptyUsage();
-    scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
+    await scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
     expect(usage.files.has('throttle')).toBe(true);
   });
 
-  it('strips file extensions from dynamic deep imports', () => {
+  it('strips file extensions from dynamic deep imports', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(f, `await import('pkg/sub/file.mjs');`);
     const usage = emptyUsage();
-    scanFile(f, PATTERNS, usage, { targetPackage: 'pkg' });
+    await scanFile(f, PATTERNS, usage, { targetPackage: 'pkg' });
     expect(usage.files.has('sub/file')).toBe(true);
   });
 
-  it('sets wildcard for await import("pkg") (top-level dynamic, no subpath)', () => {
+  it('sets wildcard for await import("pkg") (top-level dynamic, no subpath)', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(f, `const _ = await import('lodash-es');`);
     const usage = emptyUsage();
-    scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
+    await scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
     expect(usage.wildcard).toBe(true);
   });
 
-  it('sets wildcard for require("pkg") (top-level CJS require)', () => {
+  it('sets wildcard for require("pkg") (top-level CJS require)', async () => {
     const f = resolve(ws.root, 'a.cjs');
     writeFileSync(f, `const _ = require('lodash-es');`);
     const usage = emptyUsage();
-    scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
+    await scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
     expect(usage.wildcard).toBe(true);
   });
 
-  it('ignores dynamic imports of other packages', () => {
+  it('ignores dynamic imports of other packages', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(
       f,
@@ -106,7 +106,7 @@ describe('scanner — dynamic imports (string literal)', () => {
        await import('other-pkg/foo');`,
     );
     const usage = emptyUsage();
-    scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
+    await scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
     expect(usage.wildcard).not.toBe(true);
     expect(usage.files.size).toBe(0);
   });
@@ -119,39 +119,39 @@ describe('scanner — dynamic imports (template literal)', () => {
   });
   afterEach(() => ws.cleanup());
 
-  it('records the static prefix as a file ref', () => {
+  it('records the static prefix as a file ref', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(
       f,
       'const name = "FaUser"; const M = await import(`react-icons/fa/${name}`);',
     );
     const usage = emptyUsage();
-    scanFile(f, PATTERNS, usage, { targetPackage: 'react-icons' });
+    await scanFile(f, PATTERNS, usage, { targetPackage: 'react-icons' });
     expect(usage.files.has('fa')).toBe(true);
     // Recording the prefix as a file ref keeps the whole `fa/` dir alive
     // (because pathMatchesFiles matches descendants).
     expect(usage.wildcard).not.toBe(true);
   });
 
-  it('sets wildcard for `${pkg}/...` (target name spans the dynamic portion)', () => {
+  it('sets wildcard for `${pkg}/...` (target name spans the dynamic portion)', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(
       f,
       'const sub = "debounce"; await import(`lodash-es/${sub}`);',
     );
     const usage = emptyUsage();
-    scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
+    await scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
     expect(usage.wildcard).toBe(true);
   });
 
-  it('ignores template literals whose prefix does not reach the target', () => {
+  it('ignores template literals whose prefix does not reach the target', async () => {
     const f = resolve(ws.root, 'a.ts');
     writeFileSync(
       f,
       'const x = "y"; await import(`./locale/${x}/index.js`); await import(`other-pkg/${x}`);',
     );
     const usage = emptyUsage();
-    scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
+    await scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
     expect(usage.wildcard).not.toBe(true);
     expect(usage.files.size).toBe(0);
   });
@@ -164,7 +164,7 @@ describe('scanner — dynamic imports (fully variable arg)', () => {
   });
   afterEach(() => ws.cleanup());
 
-  it('does NOT trigger wildcard when the arg is a runtime variable', () => {
+  it('does NOT trigger wildcard when the arg is a runtime variable', async () => {
     // Without a static portion we cannot prove the call targets our package,
     // and triggering wildcard for every `import(somePath)` in the codebase
     // would defeat all pruning for everyone.
@@ -176,7 +176,7 @@ describe('scanner — dynamic imports (fully variable arg)', () => {
        require(path);`,
     );
     const usage = emptyUsage();
-    scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
+    await scanFile(f, PATTERNS, usage, { targetPackage: 'lodash-es' });
     expect(usage.wildcard).not.toBe(true);
     expect(usage.files.size).toBe(0);
   });
@@ -186,7 +186,7 @@ describe('pruner — wildcard mode (dynamic import escape hatch)', () => {
   let ws: Workspace;
   let cache: ShakerCache;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     ws = createWorkspace();
     ws.installFixturePackage('destructure-flat', '@example/destructure-pkg');
     cache = new ShakerCache(
@@ -194,12 +194,12 @@ describe('pruner — wildcard mode (dynamic import escape hatch)', () => {
       '@example/destructure-pkg',
       ws.root,
     );
-    cache.prime();
+    await cache.prime();
   });
 
   afterEach(() => ws.cleanup());
 
-  it('does not remove anything when wildcard is set', () => {
+  it('does not remove anything when wildcard is set', async () => {
     const usage: UsageMap = {
       members: new Set(['debounce']), // only one member referenced normally
       operations: new Set(),
@@ -207,7 +207,7 @@ describe('pruner — wildcard mode (dynamic import escape hatch)', () => {
       wildcard: true,
     };
 
-    const result = prune({
+    const result = await prune({
       usageMap: usage,
       config: buildResolved('@example/destructure-pkg'),
       sourceDir: cache.getCachedPackageDir(),
@@ -224,9 +224,9 @@ describe('pruner — wildcard mode (dynamic import escape hatch)', () => {
     expect(result.warnings.some((w) => w.includes('dynamic import'))).toBe(true);
   });
 
-  it('restores previously-removed files when wildcard is later set', () => {
+  it('restores previously-removed files when wildcard is later set', async () => {
     // First pass: prune everything except debounce.
-    prune({
+    await prune({
       usageMap: {
         members: new Set(['debounce']),
         operations: new Set(),
@@ -240,7 +240,7 @@ describe('pruner — wildcard mode (dynamic import escape hatch)', () => {
     expect(existsSync(resolve(cache.getLivePackageDir(), 'filter.js'))).toBe(false);
 
     // Now: a dynamic import was added to source — wildcard kicks in, restore everything.
-    const result = prune({
+    const result = await prune({
       usageMap: {
         members: new Set(),
         operations: new Set(),
@@ -261,10 +261,10 @@ describe('pruner — wildcard mode (dynamic import escape hatch)', () => {
     expect(result.removed.length).toBe(0);
   });
 
-  it('still restores even when the live package was deleted entirely', () => {
+  it('still restores even when the live package was deleted entirely', async () => {
     rmSync(cache.getLivePackageDir(), { recursive: true, force: true });
 
-    prune({
+    await prune({
       usageMap: {
         members: new Set(),
         operations: new Set(),

@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, extname, resolve } from 'node:path';
+import { isDirectory, pathExists } from './utils.js';
 import type {
   DetectedConfig,
   HookPattern,
@@ -40,7 +41,7 @@ export async function detectPackageConfig(
   const packageDir = resolve(projectRoot, 'node_modules', targetPackage);
   const warnings: string[] = [];
 
-  if (!existsSync(packageDir)) {
+  if (!(await pathExists(packageDir))) {
     return {
       patterns: {},
       packageStructure: {},
@@ -54,18 +55,23 @@ export async function detectPackageConfig(
   let pkgJson: Record<string, unknown> = {};
   try {
     pkgJson = JSON.parse(
-      readFileSync(resolve(packageDir, 'package.json'), 'utf-8'),
+      await readFile(resolve(packageDir, 'package.json'), 'utf-8'),
     ) as Record<string, unknown>;
   } catch {
     warnings.push(`Could not read package.json for ${targetPackage}.`);
   }
 
-  const layout = detectLayout(packageDir);
-  const memberDir = detectMemberDir(packageDir, layout);
-  const { namespace, exportedMembers } = detectNamespace(packageDir, pkgJson);
-  const { hooks } = detectMemberShape(packageDir, layout, memberDir, exportedMembers);
-  const naming = detectNaming(packageDir, layout, memberDir);
-  const extensions = detectExtensions(packageDir, layout, memberDir);
+  const layout = await detectLayout(packageDir);
+  const memberDir = await detectMemberDir(packageDir, layout);
+  const { namespace, exportedMembers } = await detectNamespace(packageDir, pkgJson);
+  const { hooks } = await detectMemberShape(
+    packageDir,
+    layout,
+    memberDir,
+    exportedMembers,
+  );
+  const naming = await detectNaming(packageDir, layout, memberDir);
+  const extensions = await detectExtensions(packageDir, layout, memberDir);
   const preset = matchPreset(targetPackage);
 
   // For destructure-style packages, the scanner relies on import tracking,
@@ -129,21 +135,26 @@ export async function detectPackageConfig(
   return { patterns, packageStructure, confidence, warnings };
 }
 
-export function detectLayout(packageDir: string): StructureConfig['layout'] {
+export async function detectLayout(
+  packageDir: string,
+): Promise<StructureConfig['layout']> {
   let entries: string[] = [];
   try {
-    entries = readdirSync(packageDir);
+    entries = await readdir(packageDir);
   } catch {
     return 'barrel';
   }
 
-  const dirEntries = entries.filter((name) => {
-    try {
-      return statSync(resolve(packageDir, name)).isDirectory();
-    } catch {
-      return false;
-    }
-  });
+  const dirChecks = await Promise.all(
+    entries.map(async (name) => ({
+      name,
+      isDir: await isDirectory(resolve(packageDir, name)),
+    })),
+  );
+  const dirEntries = dirChecks.reduce<string[]>((acc, d) => {
+    if (d.isDir) acc.push(d.name);
+    return acc;
+  }, []);
 
   const memberDirName = KNOWN_MEMBER_DIRS.find((c) => dirEntries.includes(c));
 
@@ -151,18 +162,15 @@ export function detectLayout(packageDir: string): StructureConfig['layout'] {
     const memberDirPath = resolve(packageDir, memberDirName);
     let memberEntries: string[] = [];
     try {
-      memberEntries = readdirSync(memberDirPath);
+      memberEntries = await readdir(memberDirPath);
     } catch {
       return 'flat';
     }
 
-    const hasNestedDirs = memberEntries.some((name) => {
-      try {
-        return statSync(resolve(memberDirPath, name)).isDirectory();
-      } catch {
-        return false;
-      }
-    });
+    const memberDirChecks = await Promise.all(
+      memberEntries.map((name) => isDirectory(resolve(memberDirPath, name))),
+    );
+    const hasNestedDirs = memberDirChecks.some(Boolean);
 
     return hasNestedDirs ? 'nested' : 'flat';
   }
@@ -170,20 +178,24 @@ export function detectLayout(packageDir: string): StructureConfig['layout'] {
   // No known member dir. The package itself might be the member dir
   // (`lodash-es`, `date-fns`, `react-icons/fa`, `@radix-ui/*`, etc.) — i.e.
   // each top-level file or subdir is an independently-importable export.
-  if (looksDestructureStyle(packageDir, entries, dirEntries)) {
+  if (await looksDestructureStyle(packageDir, entries, dirEntries)) {
     return 'destructure';
   }
 
   return 'barrel';
 }
 
-function looksDestructureStyle(
+async function looksDestructureStyle(
   packageDir: string,
   entries: string[],
   dirEntries: string[],
-): boolean {
-  const codeFileCount = entries.filter((n) => isCodeFile(n) && n !== 'index.js' && n !== 'index.mjs' && n !== 'index.cjs').length;
-  const subdirCount = dirEntries.filter((n) => !n.startsWith('.') && n !== 'node_modules').length;
+): Promise<boolean> {
+  const codeFileCount = entries.filter(
+    (n) => isCodeFile(n) && n !== 'index.js' && n !== 'index.mjs' && n !== 'index.cjs',
+  ).length;
+  const subdirCount = dirEntries.filter(
+    (n) => !n.startsWith('.') && n !== 'node_modules',
+  ).length;
 
   // Heuristic: at least 4 sibling exportable units at the package root.
   if (codeFileCount + subdirCount < 4) return false;
@@ -196,14 +208,12 @@ function looksDestructureStyle(
   if (indexFile) {
     let source = '';
     try {
-      source = readFileSync(resolve(packageDir, indexFile), 'utf-8');
+      source = await readFile(resolve(packageDir, indexFile), 'utf-8');
     } catch {
       return false;
     }
     const reexportLines = (source.match(/export[^;]*from\s+['"]\.[^'"]+['"]/g) ?? []).length;
-    // Pure barrel: many `export ... from './...'` and little else.
     if (reexportLines >= 4) return true;
-    // No re-exports → looks like a real barrel implementation file, not a re-export hub.
     if (reexportLines === 0) return false;
   }
 
@@ -214,26 +224,26 @@ function isCodeFile(name: string): boolean {
   return /\.(m?js|c?js|d\.ts|d\.mts|d\.cts|ts|tsx)$/.test(name);
 }
 
-export function detectMemberDir(
+export async function detectMemberDir(
   packageDir: string,
   layout: StructureConfig['layout'],
-): string | undefined {
+): Promise<string | undefined> {
   if (layout === 'barrel') return undefined;
   if (layout === 'destructure') return '.';
-  return KNOWN_MEMBER_DIRS.find((c) => {
-    try {
-      return statSync(resolve(packageDir, c)).isDirectory();
-    } catch {
-      return false;
-    }
-  });
+  const checks = await Promise.all(
+    KNOWN_MEMBER_DIRS.map(async (c) => ({
+      c,
+      isDir: await isDirectory(resolve(packageDir, c)),
+    })),
+  );
+  return checks.find((x) => x.isDir)?.c;
 }
 
-export function detectExtensions(
+export async function detectExtensions(
   packageDir: string,
   layout: StructureConfig['layout'],
   memberDir: string | undefined,
-): string[] {
+): Promise<string[]> {
   const targetDir =
     layout === 'barrel' || !memberDir || memberDir === '.'
       ? packageDir
@@ -241,34 +251,36 @@ export function detectExtensions(
 
   let entries: string[] = [];
   try {
-    entries = readdirSync(targetDir);
+    entries = await readdir(targetDir);
   } catch {
     return [];
   }
 
   const exts = new Set<string>();
-  for (const entry of entries) {
-    try {
-      const stat = statSync(resolve(targetDir, entry));
-      if (stat.isFile()) {
-        const ext = entry.endsWith('.d.ts') ? '.d.ts' : extname(entry);
-        if (ext) exts.add(ext);
+  await Promise.all(
+    entries.map(async (entry) => {
+      try {
+        const s = await stat(resolve(targetDir, entry));
+        if (s.isFile()) {
+          const ext = entry.endsWith('.d.ts') ? '.d.ts' : extname(entry);
+          if (ext) exts.add(ext);
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
-    }
-  }
+    }),
+  );
 
   const allowed = new Set(['.js', '.mjs', '.cjs', '.d.ts', '.d.mts', '.d.cts']);
   return [...exts].filter((e) => allowed.has(e));
 }
 
-export function detectNaming(
+export async function detectNaming(
   packageDir: string,
   layout: StructureConfig['layout'],
   memberDir: string | undefined,
-): StructureConfig['naming'] | undefined {
-  const samples = sampleFilenames(packageDir, layout, memberDir, 10);
+): Promise<StructureConfig['naming'] | undefined> {
+  const samples = await sampleFilenames(packageDir, layout, memberDir, 10);
   if (samples.length === 0) return undefined;
 
   const scores: Record<StructureConfig['naming'], number> = {
@@ -297,19 +309,19 @@ export function detectNaming(
   return best;
 }
 
-export function sampleFilenames(
+export async function sampleFilenames(
   packageDir: string,
   layout: StructureConfig['layout'],
   memberDir: string | undefined,
   count: number,
-): string[] {
+): Promise<string[]> {
   if (layout === 'barrel') return [];
   if (!memberDir) return [];
 
   const dir = memberDir === '.' ? packageDir : resolve(packageDir, memberDir);
   let entries: string[] = [];
   try {
-    entries = readdirSync(dir);
+    entries = await readdir(dir);
   } catch {
     return [];
   }
@@ -317,11 +329,11 @@ export function sampleFilenames(
   const names: string[] = [];
   for (const entry of entries) {
     try {
-      const stat = statSync(resolve(dir, entry));
+      const s = await stat(resolve(dir, entry));
       let base: string;
-      if (stat.isDirectory()) {
+      if (s.isDirectory()) {
         base = entry;
-      } else if (stat.isFile()) {
+      } else if (s.isFile()) {
         base = stripExtension(entry);
       } else {
         continue;
@@ -343,16 +355,16 @@ function stripExtension(filename: string): string {
   return basename(filename, extname(filename));
 }
 
-export function detectNamespace(
+export async function detectNamespace(
   packageDir: string,
   pkgJson: Record<string, unknown>,
-): { namespace: string | undefined; exportedMembers: string[] } {
-  const entryFile = resolveEntryFile(packageDir, pkgJson);
+): Promise<{ namespace: string | undefined; exportedMembers: string[] }> {
+  const entryFile = await resolveEntryFile(packageDir, pkgJson);
   if (!entryFile) return { namespace: undefined, exportedMembers: [] };
 
   let source = '';
   try {
-    source = readFileSync(entryFile, 'utf-8');
+    source = await readFile(entryFile, 'utf-8');
   } catch {
     return { namespace: undefined, exportedMembers: [] };
   }
@@ -367,10 +379,10 @@ export function detectNamespace(
   return { namespace, exportedMembers };
 }
 
-function resolveEntryFile(
+async function resolveEntryFile(
   packageDir: string,
   pkgJson: Record<string, unknown>,
-): string | null {
+): Promise<string | null> {
   const candidates: string[] = [];
   const main = pkgJson.main as string | undefined;
   const moduleField = pkgJson.module as string | undefined;
@@ -382,7 +394,7 @@ function resolveEntryFile(
 
   for (const c of candidates) {
     const p = resolve(packageDir, c);
-    if (existsSync(p)) return p;
+    if (await pathExists(p)) return p;
   }
   return null;
 }
@@ -408,22 +420,22 @@ function extractExportedNames(source: string): string[] {
   return [...names];
 }
 
-export function detectMemberShape(
+export async function detectMemberShape(
   packageDir: string,
   layout: StructureConfig['layout'],
   memberDir: string | undefined,
   _exportedMembers: string[],
-): { methods: string[]; hooks: HookPattern[] } {
+): Promise<{ methods: string[]; hooks: HookPattern[] }> {
   if (layout === 'barrel' || !memberDir) {
     return { methods: [], hooks: [] };
   }
 
-  const sample = pickMemberFile(packageDir, layout, memberDir);
+  const sample = await pickMemberFile(packageDir, layout, memberDir);
   if (!sample) return { methods: [], hooks: [] };
 
   let source = '';
   try {
-    source = readFileSync(sample, 'utf-8');
+    source = await readFile(sample, 'utf-8');
   } catch {
     return { methods: [], hooks: [] };
   }
@@ -450,15 +462,15 @@ export function detectMemberShape(
   return { methods: [...methods], hooks };
 }
 
-function pickMemberFile(
+async function pickMemberFile(
   packageDir: string,
   layout: StructureConfig['layout'],
   memberDir: string,
-): string | null {
+): Promise<string | null> {
   const dir = resolve(packageDir, memberDir);
   let entries: string[] = [];
   try {
-    entries = readdirSync(dir);
+    entries = await readdir(dir);
   } catch {
     return null;
   }
@@ -466,12 +478,12 @@ function pickMemberFile(
   for (const entry of entries) {
     try {
       const full = resolve(dir, entry);
-      const stat = statSync(full);
-      if (stat.isFile() && (entry.endsWith('.js') || entry.endsWith('.mjs'))) {
+      const s = await stat(full);
+      if (s.isFile() && (entry.endsWith('.js') || entry.endsWith('.mjs'))) {
         return full;
       }
-      if (stat.isDirectory() && layout === 'nested') {
-        const nestedEntries = readdirSync(full);
+      if (s.isDirectory() && layout === 'nested') {
+        const nestedEntries = await readdir(full);
         const candidate = nestedEntries.find(
           (name) => name.endsWith('.js') || name.endsWith('.mjs'),
         );

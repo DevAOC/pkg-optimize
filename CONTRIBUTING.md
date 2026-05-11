@@ -51,8 +51,7 @@ so if both of those pass locally you're in good shape.
 ```
 src/
   cache.ts        # ShakerCache: snapshot + restore of pruned files
-  cli.ts          # CLI entry (thin wrapper)
-  cli-impl.ts     # CLI implementation
+  cli.ts          # CLI entry + implementation
   config.ts       # Config loading, validation, preset resolution
   detector.ts     # Package layout/naming auto-detection
   index.ts        # Public programmatic API
@@ -90,8 +89,9 @@ something subtle. A few rules of thumb:
 
 ## Adding or modifying a preset
 
-Presets live in `src/presets/*.json` and are validated with Ajv against the
-schema in `src/config.ts`. To add one:
+Presets live in `src/presets/*.json`. Keep `patterns` and `packageStructure`
+aligned with the same fields we validate on user config via Zod in
+`src/config.ts`. To add one:
 
 1. Drop a new `<name>.json` in `src/presets/`.
 2. Add coverage in `tests/presets.test.ts` (and a fixture under
