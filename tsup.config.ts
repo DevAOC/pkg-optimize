@@ -1,6 +1,19 @@
 import { defineConfig } from "tsup";
+import { readFileSync } from "node:fs";
 import { copyFile, mkdir, readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const pkgVersion = JSON.parse(
+  readFileSync(
+    resolve(fileURLToPath(import.meta.url), "..", "package.json"),
+    "utf8",
+  ),
+).version as string;
+
+const versionDefine = {
+  "process.env.PKG_OPTIMIZE_VERSION": JSON.stringify(pkgVersion),
+} as const;
 
 export default defineConfig([
   {
@@ -11,6 +24,7 @@ export default defineConfig([
     sourcemap: true,
     target: "node22",
     platform: "node",
+    define: versionDefine,
     onSuccess: async () => {
       const src = resolve("src/presets");
       const dest = resolve("dist/presets");
@@ -38,5 +52,6 @@ export default defineConfig([
     target: "node22",
     platform: "node",
     sourcemap: true,
+    define: versionDefine,
   },
 ]);

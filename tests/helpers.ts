@@ -1,4 +1,12 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +22,11 @@ export interface Workspace {
   root: string;
   /** Copy a fake package fixture into the workspace's node_modules under `targetPackage`. */
   installFixturePackage(fixtureName: string, targetPackage: string): string;
+  /**
+   * Like `installFixturePackage`, but the live path under `node_modules` is a
+   * symlink to a real directory (simulates pnpm / some hoisted layouts).
+   */
+  installFixturePackageSymlinked(fixtureName: string, targetPackage: string): string;
   /** Copy the test source fixtures into the workspace. */
   installFixtureSource(opts?: { dirs?: string[] }): void;
   /** Create a `pkg-optimize.config.json` file. */
@@ -32,6 +45,16 @@ export function createWorkspace(): Workspace {
       mkdirSync(resolve(root, 'node_modules'), { recursive: true });
       cpSync(src, dest, { recursive: true });
       return dest;
+    },
+    installFixturePackageSymlinked(fixtureName, targetPackage) {
+      const src = resolve(PACKAGE_FIXTURES, fixtureName);
+      const linkPath = resolve(root, 'node_modules', targetPackage);
+      const realDest = resolve(root, '.fixture-store', targetPackage);
+      mkdirSync(dirname(realDest), { recursive: true });
+      cpSync(src, realDest, { recursive: true });
+      mkdirSync(dirname(linkPath), { recursive: true });
+      symlinkSync(realDest, linkPath, 'dir');
+      return linkPath;
     },
     installFixtureSource(opts) {
       const dirs = opts?.dirs ?? ['web', 'extensions'];
