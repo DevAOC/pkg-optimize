@@ -1,4 +1,6 @@
-import { resolve, sep } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { isAbortError } from "./utils.js";
 import { ShakerCache } from "./cache.js";
@@ -255,17 +257,32 @@ function printVersion(): void {
   const version = process.env.PKG_OPTIMIZE_VERSION ?? "0.1.0";
   console.log(version);
 }
-// If this file is bundled as the package "bin" entry, `process.argv[1]` will
-// point at the built CLI file (typically `dist/cli.js`). When imported from the
-// programmatic API, it should do nothing unless `runCli()` is called.
-const shouldAutoRun =
-  typeof process !== "undefined" &&
-  Array.isArray(process.argv) &&
-  typeof process.argv[1] === "string" &&
-  (process.argv[1].endsWith(`${sep}dist${sep}cli.js`) ||
-    process.argv[1].endsWith(`${sep}dist${sep}cli`) ||
-    process.argv[1].endsWith(`${sep}cli.js`) ||
-    process.argv[1].endsWith(`${sep}cli`));
+// Only the dedicated CLI output file should auto-run. The same module is also
+// bundled into `index.js` for `runCli` exports — that bundle must not start the
+// CLI when consumers import the library. `argv[1]` is often a `node_modules/.bin`
+// symlink, so compare real paths to `import.meta.url` instead of path suffixes.
+const shouldAutoRun = (() => {
+  if (typeof process === "undefined" || typeof process.argv?.[1] !== "string") {
+    return false;
+  }
+  let thisFile: string;
+  try {
+    thisFile = fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+  const base = basename(thisFile);
+  if (!/^cli\.(js|ts|cjs)$/.test(base)) {
+    return false;
+  }
+  try {
+    const invokedHref = pathToFileURL(realpathSync(process.argv[1])).href;
+    const thisHref = pathToFileURL(realpathSync(thisFile)).href;
+    return invokedHref === thisHref;
+  } catch {
+    return false;
+  }
+})();
 
 if (shouldAutoRun) {
   void (async () => {
