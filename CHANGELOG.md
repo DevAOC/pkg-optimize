@@ -1,5 +1,11 @@
 # pkg-optimize
 
+## 0.3.0
+
+### Minor Changes
+
+- [#9](https://github.com/DevAOC/pkg-optimize/pull/9) [`80abc9a`](https://github.com/DevAOC/pkg-optimize/commit/80abc9a610d12932cb19907e543b4532de45c834) Thanks [@DevAOC](https://github.com/DevAOC)! - Adding debug package in favor of picocolors and our own logger
+
 ## 0.2.1
 
 ### Patch Changes
