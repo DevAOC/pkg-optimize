@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { isAbortError } from "./utils.js";
 import { ShakerCache } from "./cache.js";
@@ -257,28 +257,34 @@ function printVersion(): void {
   const version = process.env.PKG_OPTIMIZE_VERSION ?? "0.1.0";
   console.log(version);
 }
-// Only the dedicated CLI output file should auto-run. The same module is also
-// bundled into `index.js` for `runCli` exports — that bundle must not start the
-// CLI when consumers import the library. `argv[1]` is often a `node_modules/.bin`
-// symlink, so compare real paths to `import.meta.url` instead of path suffixes.
-const shouldAutoRun = (() => {
-  if (typeof process === "undefined" || typeof process.argv?.[1] !== "string") {
-    return false;
-  }
-  let thisFile: string;
+// Only the dedicated CLI bundle should auto-run. The same source is also bundled
+// into `dist/index.js` for `runCli` — that file must not start the CLI on import.
+//
+// Prefer `import.meta.main` (Node 22.18+). On earlier 22.x releases (e.g. CI on
+// 22.14), it is undefined, so fall back to comparing real paths: `argv[1]` is often
+// a `node_modules/.bin/pkg-optimize` symlink and must resolve to this file. Use
+// plain path strings from `realpathSync`, not `pathToFileURL(...).href` (encoding
+// and platform differences can make hrefs differ while paths match).
+function isBuiltCliBundle(): boolean {
   try {
-    thisFile = fileURLToPath(import.meta.url);
+    return /^cli\.(js|ts|cjs)$/.test(basename(fileURLToPath(import.meta.url)));
   } catch {
     return false;
   }
-  const base = basename(thisFile);
-  if (!/^cli\.(js|ts|cjs)$/.test(base)) {
-    return false;
-  }
+}
+
+const importMeta = import.meta as ImportMeta & { readonly main?: boolean };
+
+const shouldAutoRun = (() => {
+  if (typeof process === "undefined" || !isBuiltCliBundle()) return false;
+
+  if (importMeta.main === true) return true;
+  if (importMeta.main === false) return false;
+
+  const argv1 = process.argv[1];
+  if (typeof argv1 !== "string") return false;
   try {
-    const invokedHref = pathToFileURL(realpathSync(process.argv[1])).href;
-    const thisHref = pathToFileURL(realpathSync(thisFile)).href;
-    return invokedHref === thisHref;
+    return realpathSync(argv1) === realpathSync(fileURLToPath(import.meta.url));
   } catch {
     return false;
   }
