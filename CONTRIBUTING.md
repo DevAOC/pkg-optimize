@@ -203,6 +203,9 @@ The script refuses to run with uncommitted changes, then runs `npm ci`,
 temporarily rewrites `package.json` to a version like
 `0.0.0-experimental.<git-sha>`, publishes that build to npm with the
 `experimental` dist-tag, and restores `package.json` before exiting.
+Because this command is meant to run locally, it disables npm provenance for
+the experimental publish; normal releases still publish with provenance from
+GitHub Actions.
 You must be logged in to npm first; run `npm login` or `npm adduser` if
 `npm whoami` fails.
 

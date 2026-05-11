@@ -43,7 +43,11 @@ Please commit or stash them before publishing
     await writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
 
     console.log(`\nPublishing experimental release: ${packageJson.version}`);
-    await run("npm", ["publish", "--tag", "experimental"], { stdio: "inherit" });
+    await run(
+      "npm",
+      ["publish", "--tag", "experimental", "--provenance=false"],
+      { stdio: "inherit" },
+    );
   } finally {
     await run("git", ["checkout", "package.json"]);
   }
