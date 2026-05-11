@@ -15,6 +15,7 @@ import type { Dirent } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { isAbortError, isDirectory, pathExists, withSignal } from './utils.js';
+import { dbg } from './logger.js';
 import type { PatternsConfig, UsageMap } from './types.js';
 
 // `@babel/traverse` is a CJS module; default-export interop differs between
@@ -45,6 +46,14 @@ export interface ScanOptions {
   signal?: AbortSignal;
 }
 
+export interface ScanWalkStats {
+  sourceFiles: number;
+  skippedIgnoredDirs: number;
+  skippedHiddenDirs: number;
+  skippedNonSourceExt: number;
+  skippedMissingScanRoots: number;
+}
+
 export async function scanDirs(
   dirs: string[],
   projectRoot: string,
@@ -58,17 +67,47 @@ export async function scanDirs(
     files: new Set(),
   };
 
+  const stats: ScanWalkStats = {
+    sourceFiles: 0,
+    skippedIgnoredDirs: 0,
+    skippedHiddenDirs: 0,
+    skippedNonSourceExt: 0,
+    skippedMissingScanRoots: 0,
+  };
+
   const { signal } = options;
   await Promise.all(
     dirs.map(async (dir) => {
       const abs = resolve(projectRoot, dir);
-      if (!(await pathExists(abs, signal))) return;
+      if (!(await pathExists(abs, signal))) {
+        stats.skippedMissingScanRoots++;
+        dbg.scan('skip scan root (missing): %s', abs);
+        return;
+      }
       await walkDir(
         abs,
-        (filePath) => scanFile(filePath, patterns, usageMap, options),
+        (filePath) => {
+          stats.sourceFiles++;
+          return scanFile(filePath, patterns, usageMap, options);
+        },
         signal,
+        stats,
       );
     }),
+  );
+
+  dbg.scan(
+    'target=%s files=%d members=%d operations=%d deepImports=%d wildcard=%s walk: ignoredDirs=%d hiddenDirs=%d nonSourceExt=%d missingRoots=%d',
+    options.targetPackage ?? '(none)',
+    stats.sourceFiles,
+    usageMap.members.size,
+    usageMap.operations.size,
+    usageMap.files.size,
+    String(!!usageMap.wildcard),
+    stats.skippedIgnoredDirs,
+    stats.skippedHiddenDirs,
+    stats.skippedNonSourceExt,
+    stats.skippedMissingScanRoots,
   );
 
   return usageMap;
@@ -422,6 +461,7 @@ async function walkDir(
   dir: string,
   cb: (filePath: string) => void | Promise<void>,
   signal?: AbortSignal,
+  stats?: ScanWalkStats,
 ): Promise<void> {
   signal?.throwIfAborted();
   let entries: Dirent[];
@@ -438,15 +478,24 @@ async function walkDir(
     entries.map(async (entry) => {
       signal?.throwIfAborted();
       if (entry.name.startsWith('.') && entry.name !== '.') {
-        if (entry.isDirectory()) return;
+        if (entry.isDirectory()) {
+          if (stats) stats.skippedHiddenDirs++;
+          return;
+        }
       }
       const full = resolve(dir, entry.name);
       if (entry.isDirectory()) {
-        if (IGNORED_DIRS.has(entry.name)) return;
-        await walkDir(full, cb, signal);
+        if (IGNORED_DIRS.has(entry.name)) {
+          if (stats) stats.skippedIgnoredDirs++;
+          return;
+        }
+        await walkDir(full, cb, signal, stats);
       } else if (entry.isFile()) {
         const ext = entry.name.endsWith('.d.ts') ? '.d.ts' : extname(entry.name);
         if (SCAN_EXTENSIONS.has(ext)) await cb(full);
+        else {
+          if (stats) stats.skippedNonSourceExt++;
+        }
       }
     }),
   );

@@ -1,5 +1,6 @@
 import { cp, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
+import { dbg } from './logger.js';
 import { isAbortError, pathExists, withSignal } from './utils.js';
 import type {
   PruneResult,
@@ -32,6 +33,18 @@ export async function prune(args: PruneArgs): Promise<PruneResult> {
   const { usageMap, config, sourceDir, signal } = args;
   signal?.throwIfAborted();
   const allowSet = buildAllowSet(usageMap, config.allow);
+  const layout = config.packageStructure.layout;
+
+  dbg.prune(
+    '[%s] start layout=%s soft=%s wildcard=%s members=%d operations=%d files=%d',
+    config.targetPackage,
+    layout,
+    String(!!args.soft),
+    String(!!usageMap.wildcard),
+    usageMap.members?.size ?? 0,
+    usageMap.operations?.size ?? 0,
+    usageMap.files?.size ?? 0,
+  );
 
   const result: PruneResult = {
     packageName: config.targetPackage,
@@ -42,9 +55,15 @@ export async function prune(args: PruneArgs): Promise<PruneResult> {
   };
 
   if (!(await pathExists(sourceDir, signal))) {
+    dbg.prune(
+      '[%s] skip: no cache at %s',
+      config.targetPackage,
+      sourceDir,
+    );
     result.warnings.push(
       `No cache found at ${sourceDir}. Skipping prune for ${config.targetPackage}.`,
     );
+    dbg.prune('[%s] done (aborted: no cache) warnings=%d', config.targetPackage, result.warnings.length);
     return result;
   }
 
@@ -52,14 +71,23 @@ export async function prune(args: PruneArgs): Promise<PruneResult> {
   // `require('pkg')` / `import(somePath)` it couldn't statically resolve, we
   // can't safely remove anything. Restore everything and bail.
   if (usageMap.wildcard) {
+    dbg.prune(
+      '[%s] skip prune: dynamic import / unresolved path — restore-only',
+      config.targetPackage,
+    );
     await restoreAll(args, result);
     result.warnings.push(
       `${config.targetPackage}: dynamic import detected with an unresolvable target — pruning skipped, all files kept/restored.`,
     );
+    dbg.prune(
+      '[%s] done (restore-only) restored=%d kept=%d warnings=%d',
+      config.targetPackage,
+      result.restored.length,
+      result.kept.length,
+      result.warnings.length,
+    );
     return result;
   }
-
-  const layout = config.packageStructure.layout;
 
   switch (layout) {
     case 'nested':
@@ -72,6 +100,7 @@ export async function prune(args: PruneArgs): Promise<PruneResult> {
       await pruneDestructure(args, allowSet, result);
       break;
     case 'barrel':
+      dbg.prune('[%s] skip prune: barrel layout (file-level prune unsupported)', config.targetPackage);
       result.warnings.push(
         `${config.targetPackage} uses a "barrel" layout — file-level pruning is not supported. ` +
           `Consider asking the package author to provide individual entry points, or use deep imports ` +
@@ -79,6 +108,15 @@ export async function prune(args: PruneArgs): Promise<PruneResult> {
       );
       break;
   }
+
+  dbg.prune(
+    '[%s] done removed=%d restored=%d kept=%d warnings=%d',
+    config.targetPackage,
+    result.removed.length,
+    result.restored.length,
+    result.kept.length,
+    result.warnings.length,
+  );
 
   return result;
 }
@@ -158,6 +196,11 @@ async function pruneNested(
   const liveMembersDir = resolve(targetDir, memberDirName);
 
   if (!(await pathExists(cachedMembersDir, signal))) {
+    dbg.prune(
+      '[%s] skip nested walk: cached member dir missing: %s',
+      config.targetPackage,
+      memberDirName,
+    );
     result.warnings.push(
       `Cached member dir ${memberDirName} not found in cache for ${config.targetPackage}.`,
     );
@@ -192,6 +235,12 @@ async function pruneNested(
         pathMatchesFiles(`${memberDirName}/${entry}`, allowSet.files);
 
       if (!memberAllowed) {
+        dbg.prune(
+          '[%s] remove member tree (not referenced): %s/%s',
+          config.targetPackage,
+          memberDirName,
+          entry,
+        );
         await removeIfPresent(liveEntryPath, soft, result, `${memberDirName}/${entry}`, signal);
         return;
       }
@@ -228,6 +277,11 @@ async function pruneNested(
         if (operationAllowed) {
           await ensureFileFromCache(cachedFilePath, liveFilePath, result, fullRel, signal);
         } else {
+          dbg.prune(
+            '[%s] remove operation file (not referenced): %s',
+            config.targetPackage,
+            fullRel,
+          );
           await removeIfPresent(liveFilePath, soft, result, fullRel, signal);
         }
       }, signal);
@@ -291,6 +345,11 @@ async function processFlatDir(
 ): Promise<void> {
   const { config, soft, signal } = args;
   if (!(await pathExists(cachedDir, signal))) {
+    dbg.prune(
+      '[%s] skip flat dir: cached path missing: %s',
+      config.targetPackage,
+      dirName,
+    );
     result.warnings.push(`Cached dir ${dirName} not found for ${config.targetPackage}.`);
     return;
   }
@@ -337,6 +396,11 @@ async function processFlatDir(
       if (allowed) {
         await ensureFileFromCache(cachedFile, liveFile, result, fullRel, signal);
       } else {
+        dbg.prune(
+          '[%s] remove flat entry (not referenced): %s',
+          config.targetPackage,
+          fullRel,
+        );
         await removeIfPresent(liveFile, soft, result, fullRel, signal);
       }
     }),
@@ -361,6 +425,11 @@ async function pruneDestructure(
   const liveRoot = resolve(targetDir, memberDirName);
 
   if (!(await pathExists(cachedRoot, signal))) {
+    dbg.prune(
+      '[%s] skip destructure: cached member root missing: %s',
+      config.targetPackage,
+      memberDirName,
+    );
     result.warnings.push(
       `Cached member dir ${memberDirName} not found in cache for ${config.targetPackage}.`,
     );
@@ -399,9 +468,12 @@ async function pruneDestructure(
 
       if (allowed) {
         await ensureFileFromCache(cachedEntry, liveEntry, result, fullRel, signal);
-      } else if (s.isDirectory()) {
-        await removeIfPresent(liveEntry, soft, result, fullRel, signal);
       } else {
+        dbg.prune(
+          '[%s] remove destructure entry (not referenced): %s',
+          config.targetPackage,
+          fullRel,
+        );
         await removeIfPresent(liveEntry, soft, result, fullRel, signal);
       }
     }),
@@ -418,15 +490,25 @@ async function pruneDestructure(
  * want to *restore* anything that may have been pruned in a prior run.
  */
 async function restoreAll(args: PruneArgs, result: PruneResult): Promise<void> {
-  const { sourceDir, targetDir, signal } = args;
+  const { sourceDir, targetDir, signal, config } = args;
+  dbg.prune(
+    '[%s] bulk restore from cache → live (wildcard / restore-only)',
+    config.targetPackage,
+  );
   await walkFiles(
     sourceDir,
     async (cachedPath) => {
       const rel = relative(sourceDir, cachedPath).split(sep).join('/');
       const livePath = resolve(targetDir, rel);
-      await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
+      await ensureFileFromCache(cachedPath, livePath, result, rel, signal, true);
     },
     signal,
+  );
+  dbg.prune(
+    '[%s] bulk restore finished restored=%d kept=%d',
+    config.targetPackage,
+    result.restored.length,
+    result.kept.length,
   );
 }
 
@@ -459,6 +541,7 @@ async function ensureFileFromCache(
   result: PruneResult,
   label: string,
   signal?: AbortSignal,
+  quietRestore?: boolean,
 ): Promise<void> {
   signal?.throwIfAborted();
   if (!(await pathExists(cachedPath, signal))) return;
@@ -467,6 +550,9 @@ async function ensureFileFromCache(
     await withSignal(signal, () =>
       cp(cachedPath, livePath, { recursive: true, force: true }),
     );
+    if (!quietRestore) {
+      dbg.prune('[%s] restored %s', result.packageName, label);
+    }
     result.restored.push(label);
   } else {
     result.kept.push(label);
@@ -483,9 +569,11 @@ async function removeIfPresent(
   signal?.throwIfAborted();
   if (!(await pathExists(livePath, signal))) return;
   if (soft) {
+    dbg.prune('[%s] soft: would remove %s', result.packageName, label);
     result.warnings.push(`Would remove ${label} (soft mode)`);
     return;
   }
+  dbg.prune('[%s] removed %s', result.packageName, label);
   await withSignal(signal, () => rm(livePath, { recursive: true, force: true }));
   result.removed.push(label);
 }
