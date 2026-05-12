@@ -218,6 +218,21 @@ describe("detector", () => {
     ).toBe(true);
   });
 
+  it("resolves via entry when the package is not under node_modules", async () => {
+    const target = "@gadget-client/test-app";
+    const gadgetDir = resolve(ws.root, ".gadget", "client");
+    mkdirSync(gadgetDir, { recursive: true });
+    cpSync(resolve(FIXTURE_PATHS.packages, "gadget-nested"), gadgetDir, {
+      recursive: true,
+    });
+    const detected = await detectPackageConfig(target, ws.root, {
+      entry: [".gadget/client"],
+    });
+    expect(detected.skip).not.toBe(true);
+    expect(detected.packageStructure?.layout).toBe("nested");
+    expect(detected.packageStructure?.memberDir).toBe("models");
+  });
+
   it("does not force nested Gadget preset when symlinked package has no models tree", async () => {
     const realDest = resolve(
       ws.root,

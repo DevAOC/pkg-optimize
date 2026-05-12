@@ -48,33 +48,53 @@ const RESOLVE_EXTS = [
   ".js",
   ".mjs",
   ".cjs",
+  ".ts",
+  ".tsx",
+  ".mts",
+  ".cts",
   ".d.ts",
   ".d.mts",
   ".d.cts",
 ] as const;
 
-/** Resolve `package.json` `exports["."]` / `module` / `main` / default `index.js`. */
-export function resolvePackageEntrySubpath(
+/** Ordered subpaths to try for `resolvePackageEntryAbs` (first match on disk wins). */
+function collectEntrySubpathCandidates(
   pkgJson: Record<string, unknown>,
-): string | null {
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (s: unknown) => {
+    if (typeof s !== "string") return;
+    const n = normalizeEntrySubpath(s);
+    if (!n || seen.has(n)) return;
+    seen.add(n);
+    out.push(n);
+  };
   const exports = pkgJson.exports;
   if (exports && typeof exports === "object" && !Array.isArray(exports)) {
     const dot = (exports as Record<string, unknown>)["."];
-    if (typeof dot === "string") return normalizeEntrySubpath(dot);
-    if (dot && typeof dot === "object" && !Array.isArray(dot)) {
+    if (typeof dot === "string") push(dot);
+    else if (dot && typeof dot === "object" && !Array.isArray(dot)) {
       const o = dot as Record<string, unknown>;
-      const cand =
-        (typeof o.import === "string" && o.import) ||
-        (typeof o.default === "string" && o.default) ||
-        (typeof o.require === "string" && o.require);
-      if (cand) return normalizeEntrySubpath(cand);
+      push(o.import);
+      push(o.default);
+      push(o.require);
+      push(o.types);
     }
   }
-  const module = pkgJson.module;
-  if (typeof module === "string") return normalizeEntrySubpath(module);
-  const main = pkgJson.main;
-  if (typeof main === "string") return normalizeEntrySubpath(main);
-  return "index.js";
+  push(pkgJson.module);
+  push(pkgJson.main);
+  push(pkgJson.types);
+  if (out.length === 0) push("index.js");
+  return out;
+}
+
+/** First candidate subpath (legacy / single-path callers). */
+export function resolvePackageEntrySubpath(
+  pkgJson: Record<string, unknown>,
+): string | null {
+  const c = collectEntrySubpathCandidates(pkgJson);
+  return c[0] ?? null;
 }
 
 function normalizeEntrySubpath(s: string): string {
@@ -105,10 +125,12 @@ export async function resolvePackageEntryAbs(
   packageRoot: string,
   pkgJson: Record<string, unknown>,
 ): Promise<string | null> {
-  const subpath = resolvePackageEntrySubpath(pkgJson);
-  if (!subpath) return null;
-  const abs = resolve(packageRoot, subpath);
-  return (await resolveExistingModule(abs)) ?? null;
+  for (const sp of collectEntrySubpathCandidates(pkgJson)) {
+    const abs = resolve(packageRoot, sp);
+    const hit = await resolveExistingModule(abs);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 const DISCOVERY_SKIP_DIRS = new Set(["node_modules", ".git", ".hg"]);
@@ -395,7 +417,8 @@ export async function detectPackageConfig(
   const packageDir = resolve(projectRoot, "node_modules", target);
   const warnings: string[] = [];
 
-  if (!(await pathExists(packageDir))) {
+  const installedInNodeModules = await pathExists(packageDir);
+  if (!installedInNodeModules && !options.entry) {
     return {
       patterns: {},
       packageStructure: {},
@@ -407,16 +430,20 @@ export async function detectPackageConfig(
   }
 
   let pkgJson: Record<string, unknown> = {};
-  try {
-    pkgJson = JSON.parse(
-      await readFile(resolve(packageDir, "package.json"), "utf-8"),
-    ) as Record<string, unknown>;
-  } catch {
-    warnings.push(`Could not read package.json for ${target}.`);
+  if (installedInNodeModules) {
+    try {
+      pkgJson = JSON.parse(
+        await readFile(resolve(packageDir, "package.json"), "utf-8"),
+      ) as Record<string, unknown>;
+    } catch {
+      warnings.push(`Could not read package.json for ${target}.`);
+    }
   }
 
   const preset = matchPreset(target);
-  const installRoot = await inspectionPackageRoot(packageDir);
+  const installRoot = installedInNodeModules
+    ? await inspectionPackageRoot(packageDir)
+    : projectRoot;
 
   const discovered = await discoverPackageInspectContext(
     projectRoot,
@@ -453,7 +480,8 @@ export async function detectPackageConfig(
   // (under the package root and/or under the resolved entry directory — e.g.
   // `dist/models`). Otherwise we pick `nested` + `models` from the Gadget preset
   // while the mirrored cache has no matching tree, and nested prune warns / no-ops.
-  const symlinkHoistLikely = await isSymbolicLinkPath(packageDir);
+  const symlinkHoistLikely =
+    installedInNodeModules && (await isSymbolicLinkPath(packageDir));
   const presetLayout = preset?.packageStructure?.layout;
   if (
     layout === "barrel" &&

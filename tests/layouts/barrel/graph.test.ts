@@ -80,6 +80,23 @@ describe("resolvePackageEntryAbs", () => {
     );
   });
 
+  it('falls back to exports["."].types when import is missing', async () => {
+    root = mkdtempSync(join(tmpdir(), "pkg-opt-barrel-"));
+    writeFileSync(join(root, "api.d.ts"), "export const api: unknown;");
+    const pkgJson = {
+      exports: {
+        ".": {
+          import: "./missing.js",
+          types: "./api.d.ts",
+        },
+      },
+    };
+    writeFileSync(join(root, "package.json"), JSON.stringify(pkgJson));
+    await expect(resolvePackageEntryAbs(root, pkgJson)).resolves.toBe(
+      join(root, "api.d.ts"),
+    );
+  });
+
   it("returns null when entry file is missing", async () => {
     root = mkdtempSync(join(tmpdir(), "pkg-opt-barrel-"));
     writeFileSync(
