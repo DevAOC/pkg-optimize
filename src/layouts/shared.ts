@@ -246,6 +246,17 @@ export function stripExtension(
   filename: string,
   knownExtensions?: string[]
 ): string {
+  // Source maps (`Foo.js.map`, `Foo.d.ts.map`, …) live next to their parent
+  // file and share its stem. If we don't strip the trailing `.map` first, the
+  // fallback `lastIndexOf(".")` returns `Foo.js`, which then no longer
+  // round-trips through `toCamelCase` / allow-set lookup and the source map
+  // gets pruned even when its parent is kept.
+  if (filename.endsWith(".map") && filename.length > 4) {
+    const withoutMap = filename.slice(0, -4);
+    if (looksLikeCodeOrDeclarationFile(withoutMap, knownExtensions)) {
+      return stripExtension(withoutMap, knownExtensions);
+    }
+  }
   if (knownExtensions && knownExtensions.length > 0) {
     const sorted = [...knownExtensions].sort((a, b) => b.length - a.length);
     for (const ext of sorted) {
@@ -260,6 +271,32 @@ export function stripExtension(
   const dot = filename.lastIndexOf(".");
   if (dot <= 0) return filename;
   return filename.slice(0, dot);
+}
+
+/**
+ * Heuristic used by {@link stripExtension} to decide whether a trailing `.map`
+ * looks like a sourcemap sidecar (`Foo.js.map`, `Foo.d.ts.map`, …) rather than
+ * an unrelated user file that happens to end in `.map`. We treat the
+ * configured `knownExtensions` and the conventional JS/declaration set as the
+ * universe of "code or declaration" parents.
+ */
+function looksLikeCodeOrDeclarationFile(
+  name: string,
+  knownExtensions?: string[]
+): boolean {
+  if (knownExtensions) {
+    for (const ext of knownExtensions) {
+      if (ext.length > 0 && name.endsWith(ext)) return true;
+    }
+  }
+  return (
+    name.endsWith(".js") ||
+    name.endsWith(".mjs") ||
+    name.endsWith(".cjs") ||
+    name.endsWith(".d.ts") ||
+    name.endsWith(".d.mts") ||
+    name.endsWith(".d.cts")
+  );
 }
 
 export function symbolToFilename(

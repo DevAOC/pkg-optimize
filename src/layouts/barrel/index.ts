@@ -154,6 +154,10 @@ export async function pruneBarrel(
  * Whenever we keep a JS / MJS / CJS file we also need to keep its parallel
  * `.d.ts` / `.d.mts` / `.d.cts` sidecar (when one exists). Without this the
  * declaration files would be left dangling and break consumers.
+ *
+ * Source map sidecars (`*.js.map`, `*.d.ts.map`, …) follow their parent file
+ * for the same reason — a kept module with a deleted sourcemap breaks tooling
+ * (Stack traces, devtools) for consumers.
  */
 async function expandKeepWithDeclarationSidecars(
   sourceDir: string,
@@ -169,5 +173,15 @@ async function expandKeepWithDeclarationSidecars(
       const abs = resolve(sourceDir, cand);
       if (await pathExists(abs, signal)) keep.add(cand);
     }
+  }
+
+  // After (possibly) adding declaration sidecars, walk the keep set again and
+  // pull in any `<file>.map` companion that exists on disk.
+  const withDeclarations = [...keep];
+  for (const rel of withDeclarations) {
+    if (!/\.(?:mjs|cjs|js|d\.ts|d\.mts|d\.cts)$/.test(rel)) continue;
+    const cand = rel + ".map";
+    const abs = resolve(sourceDir, cand);
+    if (await pathExists(abs, signal)) keep.add(cand);
   }
 }

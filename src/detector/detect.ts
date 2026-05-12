@@ -894,6 +894,22 @@ export async function sampleFilenames(
 }
 
 function stripExtension(filename: string): string {
+  // Source map sidecars (`Foo.js.map`, `Foo.d.ts.map`, …) share the stem of
+  // their parent file — strip the trailing `.map` first so naming detection
+  // doesn't sample a fake stem like `Foo.js`.
+  if (filename.endsWith(".map") && filename.length > 4) {
+    const inner = filename.slice(0, -4);
+    if (
+      inner.endsWith(".js") ||
+      inner.endsWith(".mjs") ||
+      inner.endsWith(".cjs") ||
+      inner.endsWith(".d.ts") ||
+      inner.endsWith(".d.mts") ||
+      inner.endsWith(".d.cts")
+    ) {
+      return stripExtension(inner);
+    }
+  }
   if (filename.endsWith(".d.ts")) return filename.slice(0, -5);
   if (filename.endsWith(".d.mts")) return filename.slice(0, -6);
   if (filename.endsWith(".d.cts")) return filename.slice(0, -6);
