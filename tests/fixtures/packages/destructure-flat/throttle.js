@@ -1,1 +1,3 @@
-export default function throttle(fn, ms) { return fn; }
+export default function throttle(fn, ms) {
+  return fn;
+}

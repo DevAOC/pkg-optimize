@@ -1,1 +1,3 @@
-export default function subDays(d, n) { return d; }
+export default function subDays(d, n) {
+  return d;
+}

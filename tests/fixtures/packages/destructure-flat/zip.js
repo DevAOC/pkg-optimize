@@ -1,1 +1,3 @@
-export default function zip(...arrays) { return arrays; }
+export default function zip(...arrays) {
+  return arrays;
+}

@@ -1,1 +1,3 @@
-export default function addDays(d, n) { return d; }
+export default function addDays(d, n) {
+  return d;
+}

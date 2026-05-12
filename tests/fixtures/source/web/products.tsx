@@ -1,5 +1,5 @@
-import { api } from '@gadget-client/test-app';
-import { useFindMany, useAction } from '@gadget-client/test-app';
+import { api } from "@gadget-client/test-app";
+import { useFindMany, useAction } from "@gadget-client/test-app";
 
 export function ProductList() {
   const products = useFindMany(api.shopProduct);

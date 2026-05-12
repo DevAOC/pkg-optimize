@@ -1,7 +1,7 @@
-import { useQuery, useMutation } from '@apollo/test-client';
+import { useQuery, useMutation } from "@apollo/test-client";
 
 export function ProductView() {
-  useQuery('GetProduct');
-  useMutation('UpdateProduct');
+  useQuery("GetProduct");
+  useMutation("UpdateProduct");
   return null;
 }

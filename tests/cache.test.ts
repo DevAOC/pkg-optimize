@@ -5,13 +5,13 @@ import {
   rmSync,
   utimesSync,
   writeFileSync,
-} from 'node:fs';
-import { resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ShakerCache } from '../src/cache.js';
-import { createWorkspace, type Workspace } from './helpers.js';
+} from "node:fs";
+import { resolve } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ShakerCache } from "../src/cache";
+import { createWorkspace, type Workspace } from "./helpers";
 
-describe('ShakerCache.reprime', () => {
+describe("ShakerCache.reprime", () => {
   let ws: Workspace;
   let cache: ShakerCache;
   let livePkgDir: string;
@@ -19,25 +19,25 @@ describe('ShakerCache.reprime', () => {
   beforeEach(async () => {
     ws = createWorkspace();
     livePkgDir = ws.installFixturePackage(
-      'gadget-nested',
-      '@gadget-client/test-app',
+      "gadget-nested",
+      "@gadget-client/test-app"
     );
     cache = new ShakerCache(
-      '.pkg-optimize-cache',
-      '@gadget-client/test-app',
-      ws.root,
+      ".pkg-optimize-cache",
+      "@gadget-client/test-app",
+      ws.root
     );
     await cache.prime();
   });
 
   afterEach(() => ws.cleanup());
 
-  it('returns false when nothing has changed', async () => {
+  it("returns false when nothing has changed", async () => {
     expect(await cache.reprime()).toBe(false);
   });
 
-  it('reprimes when package.json mtime is newer (the install case)', async () => {
-    const livePkgJson = resolve(livePkgDir, 'package.json');
+  it("reprimes when package.json mtime is newer (the install case)", async () => {
+    const livePkgJson = resolve(livePkgDir, "package.json");
     const future = new Date(Date.now() + 60_000);
     utimesSync(livePkgJson, future, future);
 
@@ -45,58 +45,58 @@ describe('ShakerCache.reprime', () => {
   });
 
   it(
-    'does NOT reprime by default when only model files change ' +
-      '(the bug we are fixing — covered by force: true below)',
+    "does NOT reprime by default when only model files change " +
+      "(the bug we are fixing — covered by force: true below)",
     async () => {
       // Simulate `ggt` adding a new model: write into the live dir without
       // touching package.json. Without `force`, the mtime fast path returns
       // false and the cache stays stale.
-      mkdirSync(resolve(livePkgDir, 'models', 'NewModel'), { recursive: true });
+      mkdirSync(resolve(livePkgDir, "models", "NewModel"), { recursive: true });
       writeFileSync(
-        resolve(livePkgDir, 'models', 'NewModel', 'NewModel.js'),
-        'module.exports = {};',
+        resolve(livePkgDir, "models", "NewModel", "NewModel.js"),
+        "module.exports = {};"
       );
 
       expect(await cache.reprime()).toBe(false);
 
       const cachedNewModel = resolve(
         cache.getCachedPackageDir(),
-        'models',
-        'NewModel',
+        "models",
+        "NewModel"
       );
       expect(existsSync(cachedNewModel)).toBe(false);
-    },
+    }
   );
 
-  it('reprimes when forced — picks up newly-added model files', async () => {
-    mkdirSync(resolve(livePkgDir, 'models', 'NewModel'), { recursive: true });
+  it("reprimes when forced — picks up newly-added model files", async () => {
+    mkdirSync(resolve(livePkgDir, "models", "NewModel"), { recursive: true });
     writeFileSync(
-      resolve(livePkgDir, 'models', 'NewModel', 'NewModel.js'),
-      'module.exports = {};',
+      resolve(livePkgDir, "models", "NewModel", "NewModel.js"),
+      "module.exports = {};"
     );
 
     expect(await cache.reprime({ force: true })).toBe(true);
 
     const cachedNewModel = resolve(
       cache.getCachedPackageDir(),
-      'models',
-      'NewModel',
-      'NewModel.js',
+      "models",
+      "NewModel",
+      "NewModel.js"
     );
     expect(existsSync(cachedNewModel)).toBe(true);
   });
 
-  it('reprimes when forced — drops models that were removed from live', async () => {
+  it("reprimes when forced — drops models that were removed from live", async () => {
     // Confirm Customer is in cache from the initial prime.
     const cachedCustomer = resolve(
       cache.getCachedPackageDir(),
-      'models',
-      'Customer',
+      "models",
+      "Customer"
     );
     expect(existsSync(cachedCustomer)).toBe(true);
 
     // Simulate Gadget removing the model.
-    rmSync(resolve(livePkgDir, 'models', 'Customer'), {
+    rmSync(resolve(livePkgDir, "models", "Customer"), {
       recursive: true,
       force: true,
     });
@@ -105,72 +105,69 @@ describe('ShakerCache.reprime', () => {
     expect(existsSync(cachedCustomer)).toBe(false);
   });
 
-  it('forced reprime returns false when the live package is missing', async () => {
+  it("forced reprime returns false when the live package is missing", async () => {
     rmSync(livePkgDir, { recursive: true, force: true });
     expect(await cache.reprime({ force: true })).toBe(false);
   });
 
-  it('forced reprime fully replaces the cache (no stale entries left over)', async () => {
-    rmSync(resolve(livePkgDir, 'models', 'ShopOrder'), {
+  it("forced reprime fully replaces the cache (no stale entries left over)", async () => {
+    rmSync(resolve(livePkgDir, "models", "ShopOrder"), {
       recursive: true,
       force: true,
     });
-    mkdirSync(resolve(livePkgDir, 'models', 'BrandNew'), { recursive: true });
+    mkdirSync(resolve(livePkgDir, "models", "BrandNew"), { recursive: true });
     writeFileSync(
-      resolve(livePkgDir, 'models', 'BrandNew', 'BrandNew.js'),
-      'module.exports = {};',
+      resolve(livePkgDir, "models", "BrandNew", "BrandNew.js"),
+      "module.exports = {};"
     );
 
     expect(await cache.reprime({ force: true })).toBe(true);
 
-    const cachedModels = resolve(cache.getCachedPackageDir(), 'models');
+    const cachedModels = resolve(cache.getCachedPackageDir(), "models");
     const cachedEntries = readdirSync(cachedModels);
-    expect(cachedEntries).toContain('BrandNew');
-    expect(cachedEntries).not.toContain('ShopOrder');
+    expect(cachedEntries).toContain("BrandNew");
+    expect(cachedEntries).not.toContain("ShopOrder");
   });
 });
 
-describe('ShakerCache with symlinked live package', () => {
+describe("ShakerCache with symlinked live package", () => {
   let ws: Workspace;
   let cache: ShakerCache;
 
   beforeEach(async () => {
     ws = createWorkspace();
     ws.installFixturePackageSymlinked(
-      'gadget-nested',
-      '@gadget-client/test-app',
+      "gadget-nested",
+      "@gadget-client/test-app"
     );
     cache = new ShakerCache(
-      '.pkg-optimize-cache',
-      '@gadget-client/test-app',
-      ws.root,
+      ".pkg-optimize-cache",
+      "@gadget-client/test-app",
+      ws.root
     );
     await cache.prime();
   });
 
   afterEach(() => ws.cleanup());
 
-  it('primes without ERR_FS_CP_NON_DIR_TO_DIR (pnpm-style symlink)', async () => {
-    const cachedPkgJson = resolve(
-      cache.getCachedPackageDir(),
-      'package.json',
-    );
+  it("primes without ERR_FS_CP_NON_DIR_TO_DIR (pnpm-style symlink)", async () => {
+    const cachedPkgJson = resolve(cache.getCachedPackageDir(), "package.json");
     expect(existsSync(cachedPkgJson)).toBe(true);
   });
 
-  it('reprimes when forced', async () => {
+  it("reprimes when forced", async () => {
     const livePkgDir = resolve(
       ws.root,
-      'node_modules',
-      '@gadget-client',
-      'test-app',
+      "node_modules",
+      "@gadget-client",
+      "test-app"
     );
-    mkdirSync(resolve(livePkgDir, 'models', 'SymlinkOnly'), {
+    mkdirSync(resolve(livePkgDir, "models", "SymlinkOnly"), {
       recursive: true,
     });
     writeFileSync(
-      resolve(livePkgDir, 'models', 'SymlinkOnly', 'SymlinkOnly.js'),
-      'module.exports = {};',
+      resolve(livePkgDir, "models", "SymlinkOnly", "SymlinkOnly.js"),
+      "module.exports = {};"
     );
 
     expect(await cache.reprime({ force: true })).toBe(true);
@@ -178,11 +175,11 @@ describe('ShakerCache with symlinked live package', () => {
       existsSync(
         resolve(
           cache.getCachedPackageDir(),
-          'models',
-          'SymlinkOnly',
-          'SymlinkOnly.js',
-        ),
-      ),
+          "models",
+          "SymlinkOnly",
+          "SymlinkOnly.js"
+        )
+      )
     ).toBe(true);
   });
 });

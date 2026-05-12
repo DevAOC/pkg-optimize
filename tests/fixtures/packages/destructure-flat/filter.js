@@ -1,1 +1,3 @@
-export default function filter(arr, fn) { return arr.filter(fn); }
+export default function filter(arr, fn) {
+  return arr.filter(fn);
+}
