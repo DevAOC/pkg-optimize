@@ -1,5 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   detectLayout,
@@ -168,6 +168,34 @@ describe("detector", () => {
     expect(detected.warnings?.some((w) => /barrel package/i.test(w))).toBe(
       false,
     );
+  });
+
+  it("does not force nested Gadget preset when symlinked package has no models tree", async () => {
+    const realDest = resolve(
+      ws.root,
+      ".fixture-store",
+      "@gadget-client",
+      "slim-client",
+    );
+    mkdirSync(realDest, { recursive: true });
+    writeFileSync(
+      resolve(realDest, "package.json"),
+      JSON.stringify({ name: "@gadget-client/slim-client", main: "index.js" }),
+    );
+    writeFileSync(
+      resolve(realDest, "index.js"),
+      "export const api = {}; export const x = 1;",
+    );
+    writeFileSync(resolve(realDest, "a.js"), "export const a = 1;");
+    writeFileSync(resolve(realDest, "b.js"), "export const b = 1;");
+    const linkPath = resolve(ws.root, "node_modules", "@gadget-client", "slim-client");
+    mkdirSync(dirname(linkPath), { recursive: true });
+    symlinkSync(realDest, linkPath, "dir");
+    const detected = await detectPackageConfig(
+      "@gadget-client/slim-client",
+      ws.root,
+    );
+    expect(detected.packageStructure?.layout).toBe("barrel");
   });
 
   it("returns low confidence and warnings when package is not installed", async () => {

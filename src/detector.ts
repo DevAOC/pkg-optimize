@@ -86,6 +86,11 @@ export async function detectPackageConfig(
   // Hoisted installs often expose `node_modules/<pkg>` as a symlink (pnpm store,
   // etc.); if layout still reads as "barrel" but a matched preset declares a
   // concrete structure, trust the preset for that hoisted link.
+  //
+  // Only apply this when the preset's member tree actually exists on disk.
+  // Otherwise we pick `nested` + `models` from the Gadget preset while the
+  // mirrored cache has no `models/` (scanner still finds `api.*` usage from
+  // source), and nested prune warns / no-ops.
   const symlinkHoistLikely = await isSymbolicLinkPath(packageDir);
   const presetLayout = preset?.packageStructure?.layout;
   if (
@@ -94,7 +99,16 @@ export async function detectPackageConfig(
     presetLayout &&
     presetLayout !== "barrel"
   ) {
-    layout = presetLayout;
+    const memberDirForPreset =
+      (await detectMemberDir(inspectRoot, presetLayout)) ??
+      preset?.packageStructure?.memberDir;
+    const memberTreeRoot =
+      memberDirForPreset && memberDirForPreset !== "."
+        ? resolve(inspectRoot, memberDirForPreset)
+        : inspectRoot;
+    if (await isDirectory(memberTreeRoot)) {
+      layout = presetLayout;
+    }
   }
 
   const memberDir = await detectMemberDir(inspectRoot, layout);
