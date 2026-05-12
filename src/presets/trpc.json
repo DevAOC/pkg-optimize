@@ -4,8 +4,16 @@
     "accessStyle": "member",
     "depth": { "member": 1, "operation": 2 },
     "hooks": [
-      { "name": "useQuery", "argIndex": 0, "argStyle": "namespace-member-member" },
-      { "name": "useMutation", "argIndex": 0, "argStyle": "namespace-member-member" }
+      {
+        "name": "useQuery",
+        "argIndex": 0,
+        "argStyle": "namespace-member-member"
+      },
+      {
+        "name": "useMutation",
+        "argIndex": 0,
+        "argStyle": "namespace-member-member"
+      }
     ]
   },
   "packageStructure": {

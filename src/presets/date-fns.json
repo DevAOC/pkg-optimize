@@ -9,6 +9,13 @@
     "memberDir": ".",
     "naming": "camelCase",
     "extensions": [".js", ".mjs", ".cjs", ".d.ts"],
-    "preserve": ["index.js", "index.mjs", "index.d.ts", "package.json", "README.md", "LICENSE"]
+    "preserve": [
+      "index.js",
+      "index.mjs",
+      "index.d.ts",
+      "package.json",
+      "README.md",
+      "LICENSE"
+    ]
   }
 }

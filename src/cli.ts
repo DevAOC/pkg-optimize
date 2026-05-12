@@ -2,21 +2,21 @@ import { realpathSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { isAbortError } from "./utils.js";
-import { ShakerCache } from "./cache.js";
-import { loadConfig, writeConfig } from "./config.js";
+import { isAbortError } from "./utils";
+import { ShakerCache } from "./cache";
+import { loadConfig, writeConfig } from "./config";
 import {
   configureLogging,
   dbg,
   emitResult,
   logVerboseRunSummary,
   primeErrorDebug,
-} from "./logger.js";
-import { prune } from "./pruner.js";
-import { resolvePackageConfig } from "./resolver.js";
-import { scanDirs } from "./scanner.js";
-import { startWatcher } from "./watcher.js";
-import type { PruneResult, ResolvedPackageConfig } from "./types.js";
+} from "./logger";
+import { prune } from "./pruner";
+import { resolvePackageConfig } from "./resolver";
+import { scanDirs } from "./scanner";
+import { startWatcher } from "./watcher";
+import type { PruneResult, ResolvedPackageConfig } from "./types";
 
 export interface CliOptions {
   argv?: string[];
@@ -91,7 +91,7 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
 
   if (!config.packages || config.packages.length === 0) {
     dbg.warn(
-      'No packages configured. Add a "packages" array to pkg-optimize.config.json.',
+      'No packages configured. Add a "packages" array to pkg-optimize.config.json.'
     );
     return 0;
   }
@@ -132,7 +132,7 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
             await stop();
           } catch (err) {
             dbg.error(
-              (err as Error).stack ?? (err as Error).message ?? String(err),
+              (err as Error).stack ?? (err as Error).message ?? String(err)
             );
           } finally {
             disposeSignalHandlers();
@@ -148,7 +148,7 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
     // One-shot run.
     // TODO: Evaluate using p-map instead of Promise.all
     const resolved = await Promise.all(
-      config.packages.map((pkg) => resolvePackageConfig(pkg, config, cwd)),
+      config.packages.map((pkg) => resolvePackageConfig(pkg, config, cwd))
     );
 
     const results: PruneResult[] = [];
@@ -169,11 +169,11 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
               _detected: resolved[i]!._detected,
             })),
           },
-          configPath,
+          configPath
         );
       } catch (err) {
         dbg.warn(
-          `Could not persist detected config: ${(err as Error).message}`,
+          `Could not persist detected config: ${(err as Error).message}`
         );
       }
     }
@@ -185,11 +185,11 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
     const totalRemoved = results.reduce((acc, r) => acc + r.removed.length, 0);
     const totalRestored = results.reduce(
       (acc, r) => acc + r.restored.length,
-      0,
+      0
     );
     const totalKept = results.reduce((acc, r) => acc + r.kept.length, 0);
     dbg.info(
-      `Done. ${totalRemoved} removed, ${totalRestored} restored, ${totalKept} kept across ${results.length} package(s).`,
+      `Done. ${totalRemoved} removed, ${totalRestored} restored, ${totalKept} kept across ${results.length} package(s).`
     );
 
     return 0;
@@ -207,7 +207,7 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
 async function runOnce(
   pkg: ResolvedPackageConfig,
   cwd: string,
-  signal: AbortSignal,
+  signal: AbortSignal
 ): Promise<PruneResult> {
   const cache = new ShakerCache(pkg.cache.dir, pkg.targetPackage, cwd);
 
@@ -215,7 +215,7 @@ async function runOnce(
     dbg.cli(
       "skip %s: not installed at node_modules/%s",
       pkg.targetPackage,
-      pkg.targetPackage,
+      pkg.targetPackage
     );
     return {
       packageName: pkg.targetPackage,
@@ -226,7 +226,7 @@ async function runOnce(
         `Package not installed at ${resolve(
           cwd,
           "node_modules",
-          pkg.targetPackage,
+          pkg.targetPackage
         )}. Skipping.`,
       ],
     };

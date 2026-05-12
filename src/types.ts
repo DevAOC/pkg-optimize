@@ -20,7 +20,7 @@ export interface PatternsConfig {
   /** Root identifier the package is consumed under (e.g. `api`, `client`, `trpc`, `graphql`). */
   namespace: string;
   /** How the namespace is accessed in source. */
-  accessStyle: 'member' | 'destructure';
+  accessStyle: "member" | "destructure";
   /**
    * Documentation hints describing how deep the relevant references go.
    * Reserved for future use; the scanner currently always tracks both
@@ -33,17 +33,17 @@ export interface PatternsConfig {
 
 export type ArgStyle =
   /** `useFn(namespace.member)` — extracts the member name. */
-  | 'namespace-member'
+  | "namespace-member"
   /** `useFn(namespace.member.operation)` — extracts both. */
-  | 'namespace-member-member'
+  | "namespace-member-member"
   /** `useFn("MemberName")` — extracts the literal as a member. */
-  | 'string'
+  | "string"
   /** `useFn(ImportedDocument)` — extracts the identifier name as a member. */
-  | 'imported-identifier'
+  | "imported-identifier"
   /** `useFn({ key: ImportedDocument })` — reads `objectProperty` from the options object. */
-  | 'object-property-identifier'
+  | "object-property-identifier"
   /** `useFn({ key: "MemberName" })` — reads a string from the options object. */
-  | 'object-property-string';
+  | "object-property-string";
 
 export interface HookPattern {
   /** The function name to detect (e.g. `useQuery`, `useFragment`, `request`). */
@@ -69,9 +69,13 @@ export interface StructureConfig {
    * - `destructure`: each top-level entry of `memberDir` (or the package root)
    *   is itself a member — file *or* directory. Used for libraries like
    *   `lodash-es`, `date-fns`, `react-icons/*`, `@radix-ui/*`.
-   * - `barrel`: a single entry file re-exports everything; not safely prunable.
+   * - `barrel`: entry file(s) mostly re-export from other modules. The pruner
+   *   traces static `export { … } from` / `export * from` chains from the
+   *   package entry, removes unreachable implementation files, and rewrites
+   *   pure barrel files so they no longer reference deleted modules. A true
+   *   single-file bundle (no separate modules to drop) is unchanged.
    */
-  layout: 'flat' | 'nested' | 'destructure' | 'barrel';
+  layout: "flat" | "nested" | "destructure" | "barrel";
   /**
    * Directory containing one file (or subdir) per top-level member. Use `"."`
    * (or omit it for the `destructure` layout) to mean the package root.
@@ -79,7 +83,7 @@ export interface StructureConfig {
   memberDir?: string;
   /** Optional separate directory holding operations on members (flat layout only). */
   operationDir?: string;
-  naming: 'PascalCase' | 'camelCase' | 'kebab-case' | 'snake_case';
+  naming: "PascalCase" | "camelCase" | "kebab-case" | "snake_case";
   /** File extensions the pruner is allowed to remove. */
   extensions: string[];
   /** Filenames that must never be removed regardless of usage. */
@@ -89,7 +93,7 @@ export interface StructureConfig {
 export interface DetectedConfig {
   patterns?: Partial<PatternsConfig>;
   packageStructure?: Partial<StructureConfig>;
-  confidence: 'high' | 'medium' | 'low';
+  confidence: "high" | "medium" | "low";
   warnings?: string[];
 }
 
@@ -131,4 +135,4 @@ export interface ResolvedPackageConfig extends PackageConfig {
   watch: { debounceMs: number; softPruneInDev: boolean };
 }
 
-export type RunMode = 'run' | 'watch';
+export type RunMode = "run" | "watch";

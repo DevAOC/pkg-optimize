@@ -5,8 +5,16 @@
     "depth": { "member": 1, "operation": 2 },
     "hooks": [
       { "name": "request", "argIndex": 1, "argStyle": "imported-identifier" },
-      { "name": "rawRequest", "argIndex": 0, "argStyle": "imported-identifier" },
-      { "name": "batchRequests", "argIndex": 1, "argStyle": "imported-identifier" }
+      {
+        "name": "rawRequest",
+        "argIndex": 0,
+        "argStyle": "imported-identifier"
+      },
+      {
+        "name": "batchRequests",
+        "argIndex": 1,
+        "argStyle": "imported-identifier"
+      }
     ]
   },
   "packageStructure": {
@@ -14,6 +22,12 @@
     "memberDir": "operations",
     "naming": "PascalCase",
     "extensions": [".js", ".d.ts", ".ts"],
-    "preserve": ["index.js", "index.d.ts", "index.ts", "graphql.ts", "package.json"]
+    "preserve": [
+      "index.js",
+      "index.d.ts",
+      "index.ts",
+      "graphql.ts",
+      "package.json"
+    ]
   }
 }

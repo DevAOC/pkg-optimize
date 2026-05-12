@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { stat } from "node:fs/promises";
 
 /**
  * Shared helpers for cooperative cancellation (SIGINT / SIGTERM / programmatic
@@ -7,9 +7,9 @@ import { stat } from 'node:fs/promises';
 export function isAbortError(err: unknown): boolean {
   return (
     err !== null &&
-    typeof err === 'object' &&
-    'name' in err &&
-    (err as { name: string }).name === 'AbortError'
+    typeof err === "object" &&
+    "name" in err &&
+    (err as { name: string }).name === "AbortError"
   );
 }
 
@@ -22,7 +22,7 @@ export function isAbortError(err: unknown): boolean {
  */
 export async function withSignal<T>(
   signal: AbortSignal | undefined,
-  fn: () => Promise<T>,
+  fn: () => Promise<T>
 ): Promise<T> {
   signal?.throwIfAborted();
   const result = await fn();
@@ -36,7 +36,10 @@ export async function withSignal<T>(
  * and return `false` — every caller already treats "can't stat" as "missing".
  * When `signal` aborts, {@link AbortError} is rethrown so shutdown can propagate.
  */
-export async function pathExists(p: string, signal?: AbortSignal): Promise<boolean> {
+export async function pathExists(
+  p: string,
+  signal?: AbortSignal
+): Promise<boolean> {
   try {
     await withSignal(signal, () => stat(p));
     return true;
@@ -46,7 +49,10 @@ export async function pathExists(p: string, signal?: AbortSignal): Promise<boole
   }
 }
 
-export async function isDirectory(p: string, signal?: AbortSignal): Promise<boolean> {
+export async function isDirectory(
+  p: string,
+  signal?: AbortSignal
+): Promise<boolean> {
   try {
     return (await withSignal(signal, () => stat(p))).isDirectory();
   } catch (err) {
@@ -55,11 +61,30 @@ export async function isDirectory(p: string, signal?: AbortSignal): Promise<bool
   }
 }
 
-export async function isFile(p: string, signal?: AbortSignal): Promise<boolean> {
+export async function isFile(
+  p: string,
+  signal?: AbortSignal
+): Promise<boolean> {
   try {
     return (await withSignal(signal, () => stat(p))).isFile();
   } catch (err) {
     if (isAbortError(err)) throw err;
     return false;
   }
+}
+
+/** Normalize a symbol name for case-insensitive-ish matching (PascalCase, kebab, snake). */
+export function toCamelCase(name: string): string {
+  if (!name) return name;
+  const parts = name
+    .replace(/[-_]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return name;
+  const [first, ...rest] = parts;
+  return (
+    first!.toLowerCase() +
+    rest.map((p) => p[0]!.toUpperCase() + p.slice(1).toLowerCase()).join("")
+  );
 }

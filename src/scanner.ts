@@ -1,6 +1,6 @@
-import { parse } from '@babel/parser';
-import _traverse from '@babel/traverse';
-import type { NodePath } from '@babel/traverse';
+import { parse } from "@babel/parser";
+import _traverse from "@babel/traverse";
+import type { NodePath } from "@babel/traverse";
 import type {
   CallExpression,
   Identifier,
@@ -10,29 +10,29 @@ import type {
   ObjectExpression,
   ObjectProperty,
   TemplateLiteral,
-} from '@babel/types';
-import type { Dirent } from 'node:fs';
-import { readFile, readdir } from 'node:fs/promises';
-import { extname, resolve } from 'node:path';
-import { isAbortError, isDirectory, pathExists, withSignal } from './utils.js';
-import { dbg } from './logger.js';
-import type { PatternsConfig, UsageMap } from './types.js';
+} from "@babel/types";
+import type { Dirent } from "node:fs";
+import { readFile, readdir } from "node:fs/promises";
+import { extname, resolve } from "node:path";
+import { isAbortError, isDirectory, pathExists, withSignal } from "./utils";
+import { dbg } from "./logger";
+import type { PatternsConfig, UsageMap } from "./types";
 
 // `@babel/traverse` is a CJS module; default-export interop differs between
 // ESM and CJS bundles. Normalize here.
 const traverse: typeof _traverse =
   (_traverse as unknown as { default?: typeof _traverse }).default ?? _traverse;
 
-const SCAN_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
+const SCAN_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const IGNORED_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'build',
-  '.next',
-  '.turbo',
-  '.cache',
-  '.pkg-optimize-cache',
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  ".turbo",
+  ".cache",
+  ".pkg-optimize-cache",
 ]);
 
 export interface ScanOptions {
@@ -58,7 +58,7 @@ export async function scanDirs(
   dirs: string[],
   projectRoot: string,
   patterns: PatternsConfig,
-  options: ScanOptions = {},
+  options: ScanOptions = {}
 ): Promise<UsageMap> {
   options.signal?.throwIfAborted();
   const usageMap: UsageMap = {
@@ -81,7 +81,7 @@ export async function scanDirs(
       const abs = resolve(projectRoot, dir);
       if (!(await pathExists(abs, signal))) {
         stats.skippedMissingScanRoots++;
-        dbg.scan('skip scan root (missing): %s', abs);
+        dbg.scan("skip scan root (missing): %s", abs);
         return;
       }
       await walkDir(
@@ -91,14 +91,14 @@ export async function scanDirs(
           return scanFile(filePath, patterns, usageMap, options);
         },
         signal,
-        stats,
+        stats
       );
-    }),
+    })
   );
 
   dbg.scan(
-    'target=%s files=%d members=%d operations=%d deepImports=%d wildcard=%s walk: ignoredDirs=%d hiddenDirs=%d nonSourceExt=%d missingRoots=%d',
-    options.targetPackage ?? '(none)',
+    "target=%s files=%d members=%d operations=%d deepImports=%d wildcard=%s walk: ignoredDirs=%d hiddenDirs=%d nonSourceExt=%d missingRoots=%d",
+    options.targetPackage ?? "(none)",
     stats.sourceFiles,
     usageMap.members.size,
     usageMap.operations.size,
@@ -107,7 +107,7 @@ export async function scanDirs(
     stats.skippedIgnoredDirs,
     stats.skippedHiddenDirs,
     stats.skippedNonSourceExt,
-    stats.skippedMissingScanRoots,
+    stats.skippedMissingScanRoots
   );
 
   return usageMap;
@@ -117,12 +117,14 @@ export async function scanFile(
   filePath: string,
   patterns: PatternsConfig,
   usageMap: UsageMap,
-  options: ScanOptions = {},
+  options: ScanOptions = {}
 ): Promise<void> {
   const { signal } = options;
   let source: string;
   try {
-    source = await withSignal(signal, () => readFile(filePath, { encoding: 'utf-8' }));
+    source = await withSignal(signal, () =>
+      readFile(filePath, { encoding: "utf-8" })
+    );
   } catch (err) {
     if (isAbortError(err)) throw err;
     return;
@@ -131,11 +133,11 @@ export async function scanFile(
   let ast: ReturnType<typeof parse>;
   try {
     ast = parse(source, {
-      sourceType: 'module',
+      sourceType: "module",
       allowImportExportEverywhere: true,
       allowReturnOutsideFunction: true,
       errorRecovery: true,
-      plugins: ['typescript', 'jsx', 'decorators-legacy'],
+      plugins: ["typescript", "jsx", "decorators-legacy"],
     });
   } catch {
     return;
@@ -150,7 +152,12 @@ export async function scanFile(
   if (options.targetPackage) {
     traverse(ast, {
       ImportDeclaration(path: NodePath<ImportDeclaration>) {
-        handleImport(path.node, options.targetPackage!, usageMap, dynamicNamespaces);
+        handleImport(
+          path.node,
+          options.targetPackage!,
+          usageMap,
+          dynamicNamespaces
+        );
       },
     });
   }
@@ -173,7 +180,8 @@ export async function scanFile(
       const { object, property, computed } = node;
 
       if (computed) return;
-      if (object.type !== 'Identifier' || property.type !== 'Identifier') return;
+      if (object.type !== "Identifier" || property.type !== "Identifier")
+        return;
       if (dynamicNamespaces.size === 0) return;
       if (!dynamicNamespaces.has((object as Identifier).name)) return;
 
@@ -183,10 +191,10 @@ export async function scanFile(
       const parent = path.parent as Node | null;
       if (
         parent &&
-        parent.type === 'MemberExpression' &&
+        parent.type === "MemberExpression" &&
         parent.object === node &&
         !parent.computed &&
-        parent.property.type === 'Identifier'
+        parent.property.type === "Identifier"
       ) {
         usageMap.operations.add(`${memberName}.${parent.property.name}`);
       }
@@ -200,7 +208,7 @@ export async function scanFile(
       }
 
       const { callee, arguments: args } = node;
-      if (callee.type !== 'Identifier') return;
+      if (callee.type !== "Identifier") return;
       const hooks = hooksByName.get(callee.name);
       if (!hooks) return;
 
@@ -225,15 +233,15 @@ export async function scanFile(
 function handleDynamicReference(
   node: CallExpression,
   targetPackage: string,
-  usageMap: UsageMap,
+  usageMap: UsageMap
 ): void {
   const arg = getDynamicReferenceArg(node);
   if (!arg) return;
 
-  if (arg.type === 'StringLiteral') {
+  if (arg.type === "StringLiteral") {
     const subpath = matchPackageSubpath(arg.value, targetPackage);
     if (subpath === null) return; // not our package
-    if (subpath === '') {
+    if (subpath === "") {
       // `import('pkg')` with no subpath — the call returns the whole namespace
       // object and we have no way to know which exports are actually consumed.
       usageMap.wildcard = true;
@@ -243,12 +251,12 @@ function handleDynamicReference(
     return;
   }
 
-  if (arg.type === 'TemplateLiteral') {
+  if (arg.type === "TemplateLiteral") {
     const tpl = arg as TemplateLiteral;
     const firstQuasi = tpl.quasis[0];
     if (!firstQuasi) return;
-    const prefix = firstQuasi.value.cooked ?? firstQuasi.value.raw ?? '';
-    const trimmed = prefix.replace(/\/+$/, '');
+    const prefix = firstQuasi.value.cooked ?? firstQuasi.value.raw ?? "";
+    const trimmed = prefix.replace(/\/+$/, "");
 
     if (trimmed === targetPackage) {
       // `import(\`pkg/${x}\`)` — could be any subpath of the target.
@@ -274,26 +282,26 @@ function getDynamicReferenceArg(node: CallExpression): Node | null {
   const callee = node.callee as Node;
 
   // `import('foo')`
-  if (callee.type === 'Import') {
+  if (callee.type === "Import") {
     return (node.arguments[0] as Node | undefined) ?? null;
   }
 
   // `require('foo')`
   if (
-    callee.type === 'Identifier' &&
-    (callee as Identifier).name === 'require'
+    callee.type === "Identifier" &&
+    (callee as Identifier).name === "require"
   ) {
     return (node.arguments[0] as Node | undefined) ?? null;
   }
 
   // `require.resolve('foo')`
   if (
-    callee.type === 'MemberExpression' &&
+    callee.type === "MemberExpression" &&
     !(callee as MemberExpression).computed &&
-    (callee as MemberExpression).object.type === 'Identifier' &&
-    ((callee as MemberExpression).object as Identifier).name === 'require' &&
-    (callee as MemberExpression).property.type === 'Identifier' &&
-    ((callee as MemberExpression).property as Identifier).name === 'resolve'
+    (callee as MemberExpression).object.type === "Identifier" &&
+    ((callee as MemberExpression).object as Identifier).name === "require" &&
+    (callee as MemberExpression).property.type === "Identifier" &&
+    ((callee as MemberExpression).property as Identifier).name === "resolve"
   ) {
     return (node.arguments[0] as Node | undefined) ?? null;
   }
@@ -305,7 +313,7 @@ function handleImport(
   node: ImportDeclaration,
   targetPackage: string,
   usageMap: UsageMap,
-  dynamicNamespaces: Set<string>,
+  dynamicNamespaces: Set<string>
 ): void {
   const source = node.source.value;
   const subpath = matchPackageSubpath(source, targetPackage);
@@ -320,7 +328,7 @@ function handleImport(
   }
 
   for (const spec of node.specifiers) {
-    if (spec.type === 'ImportSpecifier') {
+    if (spec.type === "ImportSpecifier") {
       if (isDeepImport) {
         // Deep imports go straight to the file allow-list; we don't try to
         // drill into the named exports of an inner module (they may be barrel
@@ -328,14 +336,14 @@ function handleImport(
         usageMap.files.add(stripFilenameExt(subpath));
       } else {
         const importedName =
-          spec.imported.type === 'Identifier'
+          spec.imported.type === "Identifier"
             ? spec.imported.name
             : spec.imported.value;
         usageMap.members.add(importedName);
       }
     } else if (
-      spec.type === 'ImportDefaultSpecifier' ||
-      spec.type === 'ImportNamespaceSpecifier'
+      spec.type === "ImportDefaultSpecifier" ||
+      spec.type === "ImportNamespaceSpecifier"
     ) {
       if (isDeepImport) {
         usageMap.files.add(stripFilenameExt(subpath));
@@ -352,19 +360,22 @@ function handleImport(
  * If `source` references the target package, return the subpath after the
  * package name (`""` for a top-level import). Returns `null` otherwise.
  */
-function matchPackageSubpath(source: string, targetPackage: string): string | null {
-  if (source === targetPackage) return '';
-  const prefix = targetPackage + '/';
+function matchPackageSubpath(
+  source: string,
+  targetPackage: string
+): string | null {
+  if (source === targetPackage) return "";
+  const prefix = targetPackage + "/";
   if (source.startsWith(prefix)) return source.slice(prefix.length);
   return null;
 }
 
 function stripFilenameExt(p: string): string {
-  if (p.endsWith('.d.ts')) return p.slice(0, -5);
-  if (p.endsWith('.d.mts')) return p.slice(0, -6);
-  if (p.endsWith('.d.cts')) return p.slice(0, -6);
-  const lastSlash = p.lastIndexOf('/');
-  const lastDot = p.lastIndexOf('.');
+  if (p.endsWith(".d.ts")) return p.slice(0, -5);
+  if (p.endsWith(".d.mts")) return p.slice(0, -6);
+  if (p.endsWith(".d.cts")) return p.slice(0, -6);
+  const lastSlash = p.lastIndexOf("/");
+  const lastDot = p.lastIndexOf(".");
   if (lastDot <= lastSlash) return p;
   if (lastDot <= 0) return p;
   return p.slice(0, lastDot);
@@ -372,33 +383,33 @@ function stripFilenameExt(p: string): string {
 
 function applyHookPattern(
   arg: Node,
-  hook: NonNullable<PatternsConfig['hooks']>[number],
+  hook: NonNullable<PatternsConfig["hooks"]>[number],
   namespaces: Set<string>,
-  usageMap: UsageMap,
+  usageMap: UsageMap
 ): void {
   switch (hook.argStyle) {
-    case 'namespace-member': {
+    case "namespace-member": {
       if (
-        arg.type === 'MemberExpression' &&
+        arg.type === "MemberExpression" &&
         !arg.computed &&
-        arg.object.type === 'Identifier' &&
+        arg.object.type === "Identifier" &&
         namespaces.has((arg.object as Identifier).name) &&
-        arg.property.type === 'Identifier'
+        arg.property.type === "Identifier"
       ) {
         usageMap.members.add((arg.property as Identifier).name);
       }
       break;
     }
-    case 'namespace-member-member': {
+    case "namespace-member-member": {
       if (
-        arg.type === 'MemberExpression' &&
+        arg.type === "MemberExpression" &&
         !arg.computed &&
-        arg.object.type === 'MemberExpression' &&
+        arg.object.type === "MemberExpression" &&
         !arg.object.computed &&
-        arg.object.object.type === 'Identifier' &&
+        arg.object.object.type === "Identifier" &&
         namespaces.has((arg.object.object as Identifier).name) &&
-        arg.object.property.type === 'Identifier' &&
-        arg.property.type === 'Identifier'
+        arg.object.property.type === "Identifier" &&
+        arg.property.type === "Identifier"
       ) {
         const member = (arg.object.property as Identifier).name;
         const operation = (arg.property as Identifier).name;
@@ -407,28 +418,28 @@ function applyHookPattern(
       }
       break;
     }
-    case 'string': {
-      if (arg.type === 'StringLiteral') {
+    case "string": {
+      if (arg.type === "StringLiteral") {
         usageMap.members.add(arg.value);
       }
       break;
     }
-    case 'imported-identifier': {
-      if (arg.type === 'Identifier') {
+    case "imported-identifier": {
+      if (arg.type === "Identifier") {
         usageMap.members.add(arg.name);
       }
       break;
     }
-    case 'object-property-identifier': {
+    case "object-property-identifier": {
       const value = readObjectProperty(arg, hook.objectProperty);
-      if (value && value.type === 'Identifier') {
+      if (value && value.type === "Identifier") {
         usageMap.members.add(value.name);
       }
       break;
     }
-    case 'object-property-string': {
+    case "object-property-string": {
       const value = readObjectProperty(arg, hook.objectProperty);
-      if (value && value.type === 'StringLiteral') {
+      if (value && value.type === "StringLiteral") {
         usageMap.members.add(value.value);
       }
       break;
@@ -438,18 +449,19 @@ function applyHookPattern(
 
 function readObjectProperty(
   arg: Node,
-  propertyName: string | undefined,
+  propertyName: string | undefined
 ): Node | null {
   if (!propertyName) return null;
-  if (arg.type !== 'ObjectExpression') return null;
+  if (arg.type !== "ObjectExpression") return null;
   const obj = arg as ObjectExpression;
   for (const prop of obj.properties) {
-    if (prop.type !== 'ObjectProperty') continue;
+    if (prop.type !== "ObjectProperty") continue;
     const op = prop as ObjectProperty;
     if (op.computed) continue;
     if (
-      (op.key.type === 'Identifier' && (op.key as Identifier).name === propertyName) ||
-      (op.key.type === 'StringLiteral' && op.key.value === propertyName)
+      (op.key.type === "Identifier" &&
+        (op.key as Identifier).name === propertyName) ||
+      (op.key.type === "StringLiteral" && op.key.value === propertyName)
     ) {
       return op.value as Node;
     }
@@ -461,13 +473,13 @@ async function walkDir(
   dir: string,
   cb: (filePath: string) => void | Promise<void>,
   signal?: AbortSignal,
-  stats?: ScanWalkStats,
+  stats?: ScanWalkStats
 ): Promise<void> {
   signal?.throwIfAborted();
   let entries: Dirent[];
   try {
     entries = (await withSignal(signal, () =>
-      readdir(dir, { withFileTypes: true }),
+      readdir(dir, { withFileTypes: true })
     )) as Dirent[];
   } catch (err) {
     if (isAbortError(err)) throw err;
@@ -477,7 +489,7 @@ async function walkDir(
   await Promise.all(
     entries.map(async (entry) => {
       signal?.throwIfAborted();
-      if (entry.name.startsWith('.') && entry.name !== '.') {
+      if (entry.name.startsWith(".") && entry.name !== ".") {
         if (entry.isDirectory()) {
           if (stats) stats.skippedHiddenDirs++;
           return;
@@ -491,13 +503,15 @@ async function walkDir(
         }
         await walkDir(full, cb, signal, stats);
       } else if (entry.isFile()) {
-        const ext = entry.name.endsWith('.d.ts') ? '.d.ts' : extname(entry.name);
+        const ext = entry.name.endsWith(".d.ts")
+          ? ".d.ts"
+          : extname(entry.name);
         if (SCAN_EXTENSIONS.has(ext)) await cb(full);
         else {
           if (stats) stats.skippedNonSourceExt++;
         }
       }
-    }),
+    })
   );
 }
 

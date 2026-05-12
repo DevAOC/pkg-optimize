@@ -1,7 +1,7 @@
-import { cp, mkdir, rm, stat } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import { dbg } from './logger.js';
-import { isAbortError, pathExists, withSignal } from './utils.js';
+import { cp, mkdir, rm, stat } from "node:fs/promises";
+import { resolve } from "node:path";
+import { dbg } from "./logger";
+import { isAbortError, pathExists, withSignal } from "./utils";
 
 export class ShakerCache {
   private readonly packageDir: string;
@@ -15,9 +15,13 @@ export class ShakerCache {
    */
   private inflight: Promise<unknown> = Promise.resolve();
 
-  constructor(cacheBaseDir: string, targetPackage: string, projectRoot: string) {
+  constructor(
+    cacheBaseDir: string,
+    targetPackage: string,
+    projectRoot: string
+  ) {
     this.targetPackage = targetPackage;
-    this.packageDir = resolve(projectRoot, 'node_modules', targetPackage);
+    this.packageDir = resolve(projectRoot, "node_modules", targetPackage);
     this.cachedPackageDir = resolve(projectRoot, cacheBaseDir, targetPackage);
   }
 
@@ -36,17 +40,17 @@ export class ShakerCache {
       opts?.signal?.throwIfAborted();
       if (!(await pathExists(this.packageDir, signal))) {
         throw new Error(
-          `Cannot prime cache: package not found at ${this.packageDir}. Has it been installed?`,
+          `Cannot prime cache: package not found at ${this.packageDir}. Has it been installed?`
         );
       }
       dbg.cache(
-        '[%s] prime: copy %s → cache %s',
+        "[%s] prime: copy %s → cache %s",
         this.targetPackage,
         this.packageDir,
-        this.cachedPackageDir,
+        this.cachedPackageDir
       );
       await withSignal(signal, () =>
-        mkdir(this.cachedPackageDir, { recursive: true }),
+        mkdir(this.cachedPackageDir, { recursive: true })
       );
       await withSignal(signal, () =>
         cp(this.packageDir, this.cachedPackageDir, {
@@ -56,9 +60,9 @@ export class ShakerCache {
           // dereferencing, `cp` treats the symlink as a non-directory source
           // and fails with ERR_FS_CP_NON_DIR_TO_DIR after we mkdir the dest.
           dereference: true,
-        }),
+        })
       );
-      dbg.cache('[%s] prime: done', this.targetPackage);
+      dbg.cache("[%s] prime: done", this.targetPackage);
     });
   }
 
@@ -78,24 +82,29 @@ export class ShakerCache {
     return this.enqueue(async () => {
       opts?.signal?.throwIfAborted();
       if (!(await pathExists(this.packageDir, signal))) {
-        dbg.cache('[%s] reprime: skip (live package missing)', this.targetPackage);
+        dbg.cache(
+          "[%s] reprime: skip (live package missing)",
+          this.targetPackage
+        );
         return false;
       }
 
       if (!opts?.force) {
-        const livePkgJson = resolve(this.packageDir, 'package.json');
-        const cachedPkgJson = resolve(this.cachedPackageDir, 'package.json');
+        const livePkgJson = resolve(this.packageDir, "package.json");
+        const cachedPkgJson = resolve(this.cachedPackageDir, "package.json");
 
         let liveMtime = 0;
         let cacheMtime = 0;
         try {
-          liveMtime = (await withSignal(signal, () => stat(livePkgJson))).mtimeMs;
+          liveMtime = (await withSignal(signal, () => stat(livePkgJson)))
+            .mtimeMs;
         } catch (err) {
           if (isAbortError(err)) throw err;
           return false;
         }
         try {
-          cacheMtime = (await withSignal(signal, () => stat(cachedPkgJson))).mtimeMs;
+          cacheMtime = (await withSignal(signal, () => stat(cachedPkgJson)))
+            .mtimeMs;
         } catch (err) {
           if (isAbortError(err)) throw err;
           cacheMtime = 0;
@@ -103,32 +112,32 @@ export class ShakerCache {
 
         if (liveMtime <= cacheMtime) {
           dbg.cache(
-            '[%s] reprime: skip (package.json mtime unchanged)',
-            this.targetPackage,
+            "[%s] reprime: skip (package.json mtime unchanged)",
+            this.targetPackage
           );
           return false;
         }
       }
 
       dbg.cache(
-        '[%s] reprime: refresh cache (force=%s)',
+        "[%s] reprime: refresh cache (force=%s)",
         this.targetPackage,
-        String(!!opts?.force),
+        String(!!opts?.force)
       );
       await withSignal(signal, () =>
-        rm(this.cachedPackageDir, { recursive: true, force: true }),
+        rm(this.cachedPackageDir, { recursive: true, force: true })
       );
       await withSignal(signal, () =>
-        mkdir(this.cachedPackageDir, { recursive: true }),
+        mkdir(this.cachedPackageDir, { recursive: true })
       );
       await withSignal(signal, () =>
         cp(this.packageDir, this.cachedPackageDir, {
           recursive: true,
           force: true,
           dereference: true,
-        }),
+        })
       );
-      dbg.cache('[%s] reprime: done', this.targetPackage);
+      dbg.cache("[%s] reprime: done", this.targetPackage);
       return true;
     });
   }
@@ -147,7 +156,7 @@ export class ShakerCache {
     // every subsequent operation; the caller still sees the rejection.
     this.inflight = next.then(
       () => undefined,
-      () => undefined,
+      () => undefined
     );
     return next;
   }

@@ -1,45 +1,47 @@
-export {
-  loadConfig,
-  writeConfig,
-  findConfig,
-  validate as validateConfig,
+import { ShakerCache } from "./cache";
+import { runCli } from "./cli";
+import {
   applyTopLevelDefaults,
-  detectScanDirs,
   CONFIG_FILENAME,
-} from "./config.js";
-export {
-  detectPackageConfig,
+  detectScanDirs,
+  findConfig,
+  loadConfig,
+  validate,
+  writeConfig,
+} from "./config";
+import {
+  detectExtensions,
   detectLayout,
   detectMemberDir,
   detectNaming,
-  detectExtensions,
+  detectPackageConfig,
   scoreConfidence,
-} from "./detector.js";
-export { scanDirs, scanFile } from "./scanner.js";
-export type { ScanOptions, ScanWalkStats } from "./scanner.js";
-export {
-  prune,
-  toCamelCase,
-  symbolToFilename,
+} from "./detector";
+import {
   isPreserved,
   stripExtension,
-} from "./pruner.js";
-export { ShakerCache } from "./cache.js";
-export { resolvePackageConfig, deepMerge } from "./resolver.js";
-export { startWatcher } from "./watcher.js";
-export { loadPreset, matchPreset, listPresetNames } from "./presets/index.js";
-export {
+  symbolToFilename,
+} from "./layouts/shared";
+import {
   configureLogging,
   dbg,
   emitResult,
   formatResultLine,
   logVerboseRunSummary,
   primeErrorDebug,
-} from "./logger.js";
-export { runCli } from "./cli.js";
-export { isAbortError } from "./utils.js";
-
-export type {
+} from "./logger";
+import { listPresetNames, loadPreset, matchPreset } from "./presets/index";
+import { prune } from "./pruner";
+import { deepMerge, resolvePackageConfig } from "./resolver";
+import {
+  scanDirs,
+  scanFile,
+  type ScanOptions,
+  type ScanWalkStats,
+} from "./scanner";
+import { startWatcher } from "./watcher";
+import { isAbortError, toCamelCase } from "./utils";
+import type {
   DetectedConfig,
   HookPattern,
   PackageConfig,
@@ -50,4 +52,57 @@ export type {
   ShakerConfig,
   StructureConfig,
   UsageMap,
-} from "./types.js";
+} from "./types";
+
+export {
+  CONFIG_FILENAME,
+  applyTopLevelDefaults,
+  detectScanDirs,
+  findConfig,
+  loadConfig,
+  validate as validateConfig,
+  writeConfig,
+  detectExtensions,
+  detectLayout,
+  detectMemberDir,
+  detectNaming,
+  detectPackageConfig,
+  scoreConfidence,
+  scanDirs,
+  scanFile,
+  prune,
+  isPreserved,
+  stripExtension,
+  symbolToFilename,
+  ShakerCache,
+  resolvePackageConfig,
+  deepMerge,
+  startWatcher,
+  loadPreset,
+  matchPreset,
+  listPresetNames,
+  configureLogging,
+  dbg,
+  emitResult,
+  formatResultLine,
+  logVerboseRunSummary,
+  primeErrorDebug,
+  runCli,
+  isAbortError,
+  toCamelCase,
+};
+
+export type {
+  DetectedConfig,
+  HookPattern,
+  PackageConfig,
+  PatternsConfig,
+  PruneResult,
+  ResolvedPackageConfig,
+  RunMode,
+  ScanOptions,
+  ScanWalkStats,
+  ShakerConfig,
+  StructureConfig,
+  UsageMap,
+};

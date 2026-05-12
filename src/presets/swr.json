@@ -5,10 +5,26 @@
     "depth": { "member": 1, "operation": 2 },
     "hooks": [
       { "name": "useSWR", "argIndex": 1, "argStyle": "imported-identifier" },
-      { "name": "useSWRImmutable", "argIndex": 1, "argStyle": "imported-identifier" },
-      { "name": "useSWRMutation", "argIndex": 1, "argStyle": "imported-identifier" },
-      { "name": "useSWRInfinite", "argIndex": 1, "argStyle": "imported-identifier" },
-      { "name": "useSWRSubscription", "argIndex": 1, "argStyle": "imported-identifier" }
+      {
+        "name": "useSWRImmutable",
+        "argIndex": 1,
+        "argStyle": "imported-identifier"
+      },
+      {
+        "name": "useSWRMutation",
+        "argIndex": 1,
+        "argStyle": "imported-identifier"
+      },
+      {
+        "name": "useSWRInfinite",
+        "argIndex": 1,
+        "argStyle": "imported-identifier"
+      },
+      {
+        "name": "useSWRSubscription",
+        "argIndex": 1,
+        "argStyle": "imported-identifier"
+      }
     ]
   },
   "packageStructure": {

@@ -1,20 +1,20 @@
-import { readFile, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { z, type ZodIssue } from 'zod';
-import { isDirectory, pathExists } from './utils.js';
-import type { ShakerConfig } from './types.js';
+import { readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { z, type ZodIssue } from "zod";
+import { isDirectory, pathExists } from "./utils";
+import type { ShakerConfig } from "./types";
 
-export const CONFIG_FILENAME = 'pkg-optimize.config.json';
+export const CONFIG_FILENAME = "pkg-optimize.config.json";
 
-const SCAN_DIR_CANDIDATES = ['src', 'web', 'extensions', 'app'] as const;
+const SCAN_DIR_CANDIDATES = ["src", "web", "extensions", "app"] as const;
 
 const argStyleEnum = z.enum([
-  'namespace-member',
-  'namespace-member-member',
-  'string',
-  'imported-identifier',
-  'object-property-identifier',
-  'object-property-string',
+  "namespace-member",
+  "namespace-member-member",
+  "string",
+  "imported-identifier",
+  "object-property-identifier",
+  "object-property-string",
 ]);
 
 const hookPatternSchema = z
@@ -29,7 +29,7 @@ const hookPatternSchema = z
 const patternsSchema = z
   .object({
     namespace: z.string().optional(),
-    accessStyle: z.enum(['member', 'destructure']).optional(),
+    accessStyle: z.enum(["member", "destructure"]).optional(),
     depth: z
       .object({
         member: z.number(),
@@ -43,11 +43,11 @@ const patternsSchema = z
 
 const packageStructureSchema = z
   .object({
-    layout: z.enum(['flat', 'nested', 'destructure', 'barrel']).optional(),
+    layout: z.enum(["flat", "nested", "destructure", "barrel"]).optional(),
     memberDir: z.string().optional(),
     operationDir: z.string().optional(),
     naming: z
-      .enum(['PascalCase', 'camelCase', 'kebab-case', 'snake_case'])
+      .enum(["PascalCase", "camelCase", "kebab-case", "snake_case"])
       .optional(),
     extensions: z.array(z.string()).optional(),
     preserve: z.array(z.string()).optional(),
@@ -106,11 +106,9 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<{
 
   let raw: unknown;
   try {
-    raw = JSON.parse(await readFile(configPath, 'utf-8'));
+    raw = JSON.parse(await readFile(configPath, "utf-8"));
   } catch (err) {
-    throw new Error(
-      `Failed to parse ${configPath}: ${(err as Error).message}`,
-    );
+    throw new Error(`Failed to parse ${configPath}: ${(err as Error).message}`);
   }
 
   validate(raw);
@@ -124,9 +122,9 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<{
 
 export async function writeConfig(
   config: ShakerConfig,
-  configPath: string,
+  configPath: string
 ): Promise<void> {
-  await writeFile(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
 }
 
 export async function findConfig(dir: string): Promise<string | null> {
@@ -142,7 +140,7 @@ export async function findConfig(dir: string): Promise<string | null> {
 
 export async function applyTopLevelDefaults(
   config: ShakerConfig,
-  cwd: string,
+  cwd: string
 ): Promise<ShakerConfig> {
   const inferredScanDirs =
     config.scanDirs && config.scanDirs.length > 0
@@ -174,7 +172,7 @@ export async function detectScanDirs(cwd: string): Promise<string[]> {
     SCAN_DIR_CANDIDATES.map(async (dir) => ({
       dir,
       isDir: await isDirectory(resolve(cwd, dir)),
-    })),
+    }))
   );
   return checks.reduce<string[]>((acc, c) => {
     if (c.isDir) acc.push(c.dir);
@@ -195,12 +193,12 @@ function formatZodIssues(err: z.ZodError): string {
     .map((issue: ZodIssue) => {
       const suffix =
         issue.path.length === 0
-          ? '<root>'
+          ? "<root>"
           : `/${issue.path
               .map((segment: string | number) => String(segment))
-              .join('/')}`;
+              .join("/")}`;
       const message = issue.message;
       return `${suffix} ${message}`.trim();
     })
-    .join('; ');
+    .join("; ");
 }

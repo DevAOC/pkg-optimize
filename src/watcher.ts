@@ -1,14 +1,14 @@
-import chokidar from 'chokidar';
-import _debounce from 'lodash.debounce';
-import { resolve } from 'node:path';
-import { ShakerCache } from './cache.js';
-import { loadConfig, writeConfig } from './config.js';
-import { pathExists } from './utils.js';
-import { dbg, emitResult } from './logger.js';
-import { prune } from './pruner.js';
-import { resolvePackageConfig } from './resolver.js';
-import { scanDirs } from './scanner.js';
-import type { ResolvedPackageConfig, ShakerConfig } from './types.js';
+import chokidar from "chokidar";
+import _debounce from "lodash.debounce";
+import { resolve } from "node:path";
+import { ShakerCache } from "./cache";
+import { loadConfig, writeConfig } from "./config";
+import { pathExists } from "./utils";
+import { dbg, emitResult } from "./logger";
+import { prune } from "./pruner";
+import { resolvePackageConfig } from "./resolver";
+import { scanDirs } from "./scanner";
+import type { ResolvedPackageConfig, ShakerConfig } from "./types";
 
 const debounce: typeof _debounce =
   (_debounce as unknown as { default?: typeof _debounce }).default ?? _debounce;
@@ -21,22 +21,37 @@ export interface StartWatcherOptions {
   signal?: AbortSignal;
 }
 
-export async function startWatcher(options: StartWatcherOptions): Promise<() => Promise<void>> {
+export async function startWatcher(
+  options: StartWatcherOptions
+): Promise<() => Promise<void>> {
   const { configPath, projectRoot, signal } = options;
   let { config } = options;
 
-  dbg.watcher('starting watcher for %d configured package(s)', config.packages.length);
+  dbg.watcher(
+    "starting watcher for %d configured package(s)",
+    config.packages.length
+  );
 
   let resolvedPackages = await resolveAllPackages(config, projectRoot);
 
   // Prime caches and run an initial prune.
   for (const pkg of resolvedPackages) {
     signal?.throwIfAborted();
-    const cache = new ShakerCache(pkg.cache.dir, pkg.targetPackage, projectRoot);
+    const cache = new ShakerCache(
+      pkg.cache.dir,
+      pkg.targetPackage,
+      projectRoot
+    );
     if (!(await cache.isCached()) && (await cache.livePackageExists())) {
       await cache.prime({ signal });
     }
-    await runPruneForPackage(pkg, projectRoot, 'initial', { soft: pkg.watch.softPruneInDev }, signal);
+    await runPruneForPackage(
+      pkg,
+      projectRoot,
+      "initial",
+      { soft: pkg.watch.softPruneInDev },
+      signal
+    );
   }
 
   await writeDetectedToConfig(config, resolvedPackages, configPath, signal);
@@ -48,39 +63,60 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
       debounce((reason: string) => {
         void (async () => {
           try {
-            await runPruneForPackage(pkg, projectRoot, reason, { soft: pkg.watch.softPruneInDev }, signal);
+            await runPruneForPackage(
+              pkg,
+              projectRoot,
+              reason,
+              { soft: pkg.watch.softPruneInDev },
+              signal
+            );
           } catch (err) {
-            dbg.error(`[${pkg.targetPackage}] prune failed: ${(err as Error).message}`);
+            dbg.error(
+              `[${pkg.targetPackage}] prune failed: ${(err as Error).message}`
+            );
           }
         })();
-      }, pkg.watch.debounceMs),
+      }, pkg.watch.debounceMs)
     );
   }
 
   const minDebounce = Math.min(
     ...resolvedPackages.map((p) => p.watch.debounceMs),
-    300,
+    300
   );
   const allPackagesPruner = debounce(async (reason: string) => {
     signal?.throwIfAborted();
     dbg.info(`Re-scanning all packages (${reason})...`);
     for (const pkg of resolvedPackages) {
       signal?.throwIfAborted();
-      await runPruneForPackage(pkg, projectRoot, reason, {
-        soft: pkg.watch.softPruneInDev,
-      }, signal);
+      await runPruneForPackage(
+        pkg,
+        projectRoot,
+        reason,
+        {
+          soft: pkg.watch.softPruneInDev,
+        },
+        signal
+      );
     }
   }, minDebounce);
 
   const packageWatchers: chokidar.FSWatcher[] = [];
   for (const pkg of resolvedPackages) {
-    const cache = new ShakerCache(pkg.cache.dir, pkg.targetPackage, projectRoot);
-    const packageDir = resolve(projectRoot, 'node_modules', pkg.targetPackage);
+    const cache = new ShakerCache(
+      pkg.cache.dir,
+      pkg.targetPackage,
+      projectRoot
+    );
+    const packageDir = resolve(projectRoot, "node_modules", pkg.targetPackage);
     if (!(await pathExists(packageDir, signal))) continue;
 
     const watcher = chokidar
-      .watch(packageDir, { ignoreInitial: true, ignored: /\.pkg-optimize-cache/ })
-      .on('all', (event) => {
+      .watch(packageDir, {
+        ignoreInitial: true,
+        ignored: /\.pkg-optimize-cache/,
+      })
+      .on("all", (event) => {
         // `add`/`unlink`/`addDir`/`unlinkDir` mean the file *set* changed —
         // the only thing the pruner cares about. That's the signal a tool
         // like `ggt` or graphql-codegen produces when it regenerates a model
@@ -88,28 +124,33 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
         // `change` is an in-place content edit and the existing fast path
         // (mtime on `package.json`) is fine for that case.
         const fileSetChanged =
-          event === 'add' ||
-          event === 'unlink' ||
-          event === 'addDir' ||
-          event === 'unlinkDir';
+          event === "add" ||
+          event === "unlink" ||
+          event === "addDir" ||
+          event === "unlinkDir";
         // `ShakerCache` serializes its own operations internally, so racing
         // chokidar events can't interleave `rm` + `cp` and corrupt the cache.
         void (async () => {
           try {
-            const reprimed = await cache.reprime({ force: fileSetChanged, signal });
+            const reprimed = await cache.reprime({
+              force: fileSetChanged,
+              signal,
+            });
             if (reprimed) {
               dbg.watcher(
-                '[%s] live package file set changed — reprimed cache, scheduling prune',
-                pkg.targetPackage,
+                "[%s] live package file set changed — reprimed cache, scheduling prune",
+                pkg.targetPackage
               );
               dbg.info(
-                `[${pkg.targetPackage}] package changed externally — re-priming cache`,
+                `[${pkg.targetPackage}] package changed externally — re-priming cache`
               );
-              packagePruners.get(pkg.targetPackage)?.('package updated');
+              packagePruners.get(pkg.targetPackage)?.("package updated");
             }
           } catch (err) {
             dbg.error(
-              `[${pkg.targetPackage}] cache reprime failed: ${(err as Error).message}`,
+              `[${pkg.targetPackage}] cache reprime failed: ${
+                (err as Error).message
+              }`
             );
           }
         })();
@@ -121,28 +162,34 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
     ...new Set(resolvedPackages.flatMap((p) => p.scanDirs)),
   ].map((d) => resolve(projectRoot, d));
   const scanDirExistence = await Promise.all(
-    candidateScanDirs.map((d) => pathExists(d, signal)),
+    candidateScanDirs.map((d) => pathExists(d, signal))
   );
   const allScanDirs = candidateScanDirs.filter((_, i) => scanDirExistence[i]);
 
   const sourceWatcher = chokidar
     .watch(allScanDirs, { ignoreInitial: true, ignored: /node_modules/ })
-    .on('all', () => allPackagesPruner('source changed'));
+    .on("all", () => allPackagesPruner("source changed"));
 
   const configWatcher = chokidar
     .watch(configPath, { ignoreInitial: true })
-    .on('change', async () => {
+    .on("change", async () => {
       if (signal?.aborted) return;
-      dbg.info('Config changed — reloading and re-running all packages...');
+      dbg.info("Config changed — reloading and re-running all packages...");
       try {
         const next = await loadConfig(projectRoot);
         config = next.config;
         resolvedPackages = await resolveAllPackages(config, projectRoot);
         for (const pkg of resolvedPackages) {
           signal?.throwIfAborted();
-          await runPruneForPackage(pkg, projectRoot, 'config changed', {
-            soft: pkg.watch.softPruneInDev,
-          }, signal);
+          await runPruneForPackage(
+            pkg,
+            projectRoot,
+            "config changed",
+            {
+              soft: pkg.watch.softPruneInDev,
+            },
+            signal
+          );
         }
       } catch (err) {
         dbg.error(`Failed to reload config: ${(err as Error).message}`);
@@ -150,13 +197,13 @@ export async function startWatcher(options: StartWatcherOptions): Promise<() => 
     });
 
   dbg.info(
-    `Watching ${resolvedPackages.length} package(s) and ${allScanDirs.length} source dir(s)...`,
+    `Watching ${resolvedPackages.length} package(s) and ${allScanDirs.length} source dir(s)...`
   );
   dbg.watcher(
-    'watch roots: packages=%s scanDirs=%s config=%s',
-    resolvedPackages.map((p) => p.targetPackage).join(', '),
-    allScanDirs.join(', '),
-    configPath,
+    "watch roots: packages=%s scanDirs=%s config=%s",
+    resolvedPackages.map((p) => p.targetPackage).join(", "),
+    allScanDirs.join(", "),
+    configPath
   );
 
   return async function stop() {
@@ -173,17 +220,22 @@ async function runPruneForPackage(
   projectRoot: string,
   reason: string,
   opts: { soft: boolean },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<void> {
   signal?.throwIfAborted();
   dbg.info(`[${pkg.targetPackage}] Re-scanning (${reason})...`);
-  dbg.watcher('[%s] prune run reason=%s soft=%s', pkg.targetPackage, reason, String(opts.soft));
+  dbg.watcher(
+    "[%s] prune run reason=%s soft=%s",
+    pkg.targetPackage,
+    reason,
+    String(opts.soft)
+  );
   const cache = new ShakerCache(pkg.cache.dir, pkg.targetPackage, projectRoot);
   if (!(await cache.isCached())) {
     if (await cache.livePackageExists()) {
       await cache.prime({ signal });
     } else {
-      dbg.watcher('[%s] skip: package not installed', pkg.targetPackage);
+      dbg.watcher("[%s] skip: package not installed", pkg.targetPackage);
       dbg.warn(`[${pkg.targetPackage}] package not installed — skipping`);
       return;
     }
@@ -205,10 +257,10 @@ async function runPruneForPackage(
 
 async function resolveAllPackages(
   config: ShakerConfig,
-  projectRoot: string,
+  projectRoot: string
 ): Promise<ResolvedPackageConfig[]> {
   return Promise.all(
-    config.packages.map((pkg) => resolvePackageConfig(pkg, config, projectRoot)),
+    config.packages.map((pkg) => resolvePackageConfig(pkg, config, projectRoot))
   );
 }
 
@@ -216,7 +268,7 @@ async function writeDetectedToConfig(
   config: ShakerConfig,
   resolved: ResolvedPackageConfig[],
   configPath: string,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<void> {
   let dirty = false;
   const updated = {
