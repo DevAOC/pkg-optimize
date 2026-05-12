@@ -1,4 +1,4 @@
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -9,7 +9,7 @@ import {
   scoreConfidence,
 } from "../src/detector";
 import { matchPreset } from "../src/presets/index";
-import { createWorkspace, type Workspace } from "./helpers";
+import { createWorkspace, FIXTURE_PATHS, type Workspace } from "./helpers";
 
 describe("detector", () => {
   let ws: Workspace;
@@ -184,6 +184,40 @@ describe("detector", () => {
     );
   });
 
+  it("resolves package via bounded project search when node_modules has no entry", async () => {
+    const target = "@example/project-tree-client";
+    const nm = resolve(ws.root, "node_modules", target);
+    mkdirSync(nm, { recursive: true });
+    writeFileSync(
+      resolve(nm, "package.json"),
+      JSON.stringify({
+        name: target,
+        main: "./missing-entry.js",
+      }),
+    );
+    const offNm = resolve(ws.root, "generated", "client");
+    mkdirSync(offNm, { recursive: true });
+    cpSync(resolve(FIXTURE_PATHS.packages, "gadget-nested"), offNm, {
+      recursive: true,
+    });
+    writeFileSync(
+      resolve(offNm, "package.json"),
+      JSON.stringify({
+        name: target,
+        version: "1.0.0",
+        main: "./index.js",
+        types: "./index.d.ts",
+      }),
+    );
+    const detected = await detectPackageConfig(target, ws.root);
+    expect(detected.skip).not.toBe(true);
+    expect(detected.packageStructure?.layout).toBe("nested");
+    expect(detected.packageStructure?.memberDir).toBe("models");
+    expect(
+      detected.warnings?.some((w) => /bounded project search/i.test(w)),
+    ).toBe(true);
+  });
+
   it("does not force nested Gadget preset when symlinked package has no models tree", async () => {
     const realDest = resolve(
       ws.root,
@@ -212,7 +246,7 @@ describe("detector", () => {
     expect(detected.packageStructure?.layout).toBe("barrel");
   });
 
-  it("sets skip when package entry cannot be resolved after discovery", async () => {
+  it("sets skip when package entry cannot be resolved after search", async () => {
     const pkgDir = resolve(ws.root, "node_modules", "unresolvable-entry");
     mkdirSync(pkgDir, { recursive: true });
     writeFileSync(

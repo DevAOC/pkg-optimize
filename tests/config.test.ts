@@ -91,6 +91,19 @@ describe("config", () => {
     ).not.toThrow();
   });
 
+  it("accepts optional entry as string or path list on packages", () => {
+    expect(() =>
+      validate({
+        packages: [
+          {
+            target: "x",
+            entry: ["generated/client", ".cache/sdk"],
+          },
+        ],
+      })
+    ).not.toThrow();
+  });
+
   it("rejects legacy field names (modelArgIndex / depth.model)", () => {
     expect(() =>
       validate({

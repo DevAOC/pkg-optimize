@@ -58,7 +58,7 @@ const packageEntrySchema = z
   .object({
     target: z.string().min(1).optional(),
     targetPackage: z.string().min(1).optional(),
-    entry: z.string().optional(),
+    entry: z.union([z.string(), z.array(z.string())]).optional(),
     extends: z.string().optional(),
     scanDirs: z.array(z.string()).optional(),
     allow: z

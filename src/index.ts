@@ -37,7 +37,7 @@ export {
 } from "./logger";
 export { listPresetNames, loadPreset, matchPreset } from "./presets/index";
 export { prune } from "./pruner";
-export { deepMerge, resolvePackageConfig } from "./resolver";
+export { deepMerge, mergeEntryForDetect, resolvePackageConfig } from "./resolver";
 export {
   scanDirs,
   scanFile,

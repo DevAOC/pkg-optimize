@@ -1,7 +1,9 @@
+import { cpSync, mkdirSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { deepMerge, resolvePackageConfig } from "../src/resolver";
+import { deepMerge, mergeEntryForDetect, resolvePackageConfig } from "../src/resolver";
 import type { ShakerConfig } from "../src/types";
-import { createWorkspace, type Workspace } from "./helpers";
+import { createWorkspace, FIXTURE_PATHS, type Workspace } from "./helpers";
 
 describe("resolver", () => {
   let ws: Workspace;
@@ -81,6 +83,44 @@ describe("resolver", () => {
 
     const resolved = await resolvePackageConfig(top.packages[0]!, top, ws.root);
     expect(resolved.scanDirs).toEqual(["web"]);
+  });
+
+  it("uses merged preset entry when node_modules entry is broken", async () => {
+    const target = "@gadget-client/test-app";
+    const nm = resolve(ws.root, "node_modules", target);
+    mkdirSync(nm, { recursive: true });
+    writeFileSync(
+      resolve(nm, "package.json"),
+      JSON.stringify({ name: target, main: "./missing-entry.js" }),
+    );
+    const gadgetDir = resolve(ws.root, ".gadget", "client");
+    mkdirSync(gadgetDir, { recursive: true });
+    cpSync(resolve(FIXTURE_PATHS.packages, "gadget-nested"), gadgetDir, {
+      recursive: true,
+    });
+    const top: ShakerConfig = {
+      scanDirs: ["web"],
+      packages: [{ target }],
+    };
+    const resolved = await resolvePackageConfig(top.packages[0]!, top, ws.root);
+    expect(resolved.detected.skip).not.toBe(true);
+    expect(resolved.detected.packageStructure?.layout).toBe("nested");
+  });
+});
+
+describe("mergeEntryForDetect", () => {
+  it("returns a string when only the user supplies a single path", () => {
+    expect(mergeEntryForDetect("./vendor/pkg", undefined)).toBe("./vendor/pkg");
+  });
+
+  it("returns an array for preset-only hints so misses stay silent", () => {
+    expect(mergeEntryForDetect(undefined, [".gadget/client"])).toEqual([
+      ".gadget/client",
+    ]);
+  });
+
+  it("dedupes and preserves user-first order", () => {
+    expect(mergeEntryForDetect("a", ["b", "a"], ["c"])).toEqual(["a", "b", "c"]);
   });
 });
 

@@ -9,12 +9,17 @@ export interface PackageConfig {
   /** npm package name as used in imports (e.g. `@gadget-client/app`). */
   target: string;
   /**
-   * Optional filesystem root for that package, tried **first** before the
-   * default `node_modules/<target>` layout and closest-match search.
-   * Absolute path, or relative to the project root. Must contain a `package.json`
-   * whose `name` matches `target`.
+   * Optional filesystem root(s) for that package, tried **before** the default
+   * `node_modules/<target>` layout, nested install search, and bounded project search.
+   * Each path is absolute or relative to the project root; must contain a
+   * `package.json` whose `name` matches `target` and a resolvable package entry.
+   *
+   * - A **string**: one path; if it does not resolve, detailed warnings are emitted.
+   * - A **string[]**: ordered attempts; misses are silent so preset hints (e.g.
+   *   generated output that may not exist yet) do not warn. Merged with preset
+   *   `entry` values in `resolvePackageConfig` (user paths first, then deduped preset paths).
    */
-  entry?: string;
+  entry?: string | string[];
   extends?: string;
   scanDirs?: string[];
   allow?: { include?: string[] };

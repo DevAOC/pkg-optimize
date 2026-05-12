@@ -8,6 +8,38 @@ import type {
   ShakerConfig,
 } from "./types";
 
+function normalizeEntryPaths(value: string | string[] | undefined): string[] {
+  if (value === undefined) return [];
+  const arr = Array.isArray(value) ? value : [value];
+  return arr.map((s) => String(s).trim()).filter(Boolean);
+}
+
+/**
+ * User `entry` paths first, then preset layers, deduped in order.
+ * Returns a **string** when there is exactly one path and it came from the user
+ * (strict miss warnings in detection). Returns a **string[]** when multiple
+ * paths exist or when the only path is preset-only (silent miss).
+ */
+export function mergeEntryForDetect(
+  user: string | string[] | undefined,
+  ...presetLayers: Array<string | string[] | undefined>
+): string | string[] | undefined {
+  const userPaths = normalizeEntryPaths(user);
+  const userHad = userPaths.length > 0;
+  const seen = new Set(userPaths);
+  const out = [...userPaths];
+  for (const layer of presetLayers) {
+    for (const p of normalizeEntryPaths(layer)) {
+      if (seen.has(p)) continue;
+      seen.add(p);
+      out.push(p);
+    }
+  }
+  if (out.length === 0) return undefined;
+  if (out.length === 1 && userHad) return out[0]!;
+  return out;
+}
+
 const BUILT_IN_DEFAULTS = {
   patterns: {
     namespace: "client",
@@ -42,8 +74,13 @@ export async function resolvePackageConfig(
     ? loadPreset(pkgConfig.extends)
     : null;
   const autoPreset = explicitPreset ?? matchPreset(pkgConfig.target);
+  const mergedEntry = mergeEntryForDetect(
+    pkgConfig.entry,
+    matchPreset(pkgConfig.target)?.entry,
+    pkgConfig.extends ? loadPreset(pkgConfig.extends)?.entry : undefined,
+  );
   const detected = await detectPackageConfig(pkgConfig.target, projectRoot, {
-    entry: pkgConfig.entry,
+    entry: mergedEntry,
   });
 
   const patterns = deepMerge(

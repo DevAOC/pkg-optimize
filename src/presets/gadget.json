@@ -1,4 +1,5 @@
 {
+  "entry": [".gadget/client"],
   "patterns": {
     "namespace": "api",
     "accessStyle": "member",
