@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
 import { isDirectory, pathExists } from "./utils";
 import type {
@@ -34,9 +34,26 @@ const KNOWN_MEMBER_DIRS = [
   "hooks",
 ];
 
+/** Resolve symlinked `node_modules/<pkg>` to its physical path for layout scans. */
+async function inspectionPackageRoot(packageDir: string): Promise<string> {
+  try {
+    return await realpath(packageDir);
+  } catch {
+    return packageDir;
+  }
+}
+
+async function isSymbolicLinkPath(p: string): Promise<boolean> {
+  try {
+    return (await lstat(p)).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
 export async function detectPackageConfig(
   targetPackage: string,
-  projectRoot: string
+  projectRoot: string,
 ): Promise<DetectedConfig> {
   const packageDir = resolve(projectRoot, "node_modules", targetPackage);
   const warnings: string[] = [];
@@ -55,39 +72,56 @@ export async function detectPackageConfig(
   let pkgJson: Record<string, unknown> = {};
   try {
     pkgJson = JSON.parse(
-      await readFile(resolve(packageDir, "package.json"), "utf-8")
+      await readFile(resolve(packageDir, "package.json"), "utf-8"),
     ) as Record<string, unknown>;
   } catch {
     warnings.push(`Could not read package.json for ${targetPackage}.`);
   }
 
-  const layout = await detectLayout(packageDir);
-  const memberDir = await detectMemberDir(packageDir, layout);
+  const preset = matchPreset(targetPackage);
+  const inspectRoot = await inspectionPackageRoot(packageDir);
+
+  let layout = await detectLayout(inspectRoot);
+
+  // Hoisted installs often expose `node_modules/<pkg>` as a symlink (pnpm store,
+  // etc.); if layout still reads as "barrel" but a matched preset declares a
+  // concrete structure, trust the preset for that hoisted link.
+  const symlinkHoistLikely = await isSymbolicLinkPath(packageDir);
+  const presetLayout = preset?.packageStructure?.layout;
+  if (
+    layout === "barrel" &&
+    symlinkHoistLikely &&
+    presetLayout &&
+    presetLayout !== "barrel"
+  ) {
+    layout = presetLayout;
+  }
+
+  const memberDir = await detectMemberDir(inspectRoot, layout);
   const { namespace, exportedMembers } = await detectNamespace(
-    packageDir,
-    pkgJson
+    inspectRoot,
+    pkgJson,
   );
   const { hooks } = await detectMemberShape(
-    packageDir,
+    inspectRoot,
     layout,
     memberDir,
-    exportedMembers
+    exportedMembers,
   );
-  const naming = await detectNaming(packageDir, layout, memberDir);
-  const extensions = await detectExtensions(packageDir, layout, memberDir);
-  const preset = matchPreset(targetPackage);
+  const naming = await detectNaming(inspectRoot, layout, memberDir);
+  const extensions = await detectExtensions(inspectRoot, layout, memberDir);
 
   // For destructure-style packages, the scanner relies on import tracking,
   // not on a single namespace identifier — so a missing namespace is fine.
   const namespaceRequired = layout !== "destructure";
   if (namespaceRequired && !namespace && !preset?.patterns?.namespace) {
     warnings.push(
-      `Could not infer namespace for ${targetPackage}. Add patterns.namespace to your config.`
+      `Could not infer namespace for ${targetPackage}. Add patterns.namespace to your config.`,
     );
   }
   if (layout === "barrel") {
     warnings.push(
-      `${targetPackage} is a barrel package — pkg-optimize will trace static re-exports from the package entry, prune unused modules, and rewrite barrel files when analysis succeeds.`
+      `${targetPackage} is a barrel package — pkg-optimize will trace static re-exports from the package entry, prune unused modules, and rewrite barrel files when analysis succeeds.`,
     );
   }
 
@@ -131,7 +165,7 @@ export async function detectPackageConfig(
 
   if (confidence === "low") {
     warnings.push(
-      `Low confidence detection for ${targetPackage}. Review _detected in config and add explicit overrides if needed.`
+      `Low confidence detection for ${targetPackage}. Review _detected in config and add explicit overrides if needed.`,
     );
   }
 
@@ -139,7 +173,7 @@ export async function detectPackageConfig(
 }
 
 export async function detectLayout(
-  packageDir: string
+  packageDir: string,
 ): Promise<StructureConfig["layout"]> {
   let entries: string[] = [];
   try {
@@ -152,7 +186,7 @@ export async function detectLayout(
     entries.map(async (name) => ({
       name,
       isDir: await isDirectory(resolve(packageDir, name)),
-    }))
+    })),
   );
   const dirEntries = dirChecks.reduce<string[]>((acc, d) => {
     if (d.isDir) acc.push(d.name);
@@ -171,7 +205,7 @@ export async function detectLayout(
     }
 
     const memberDirChecks = await Promise.all(
-      memberEntries.map((name) => isDirectory(resolve(memberDirPath, name)))
+      memberEntries.map((name) => isDirectory(resolve(memberDirPath, name))),
     );
     const hasNestedDirs = memberDirChecks.some(Boolean);
 
@@ -191,17 +225,17 @@ export async function detectLayout(
 async function looksDestructureStyle(
   packageDir: string,
   entries: string[],
-  dirEntries: string[]
+  dirEntries: string[],
 ): Promise<boolean> {
   const codeFileCount = entries.filter(
     (n) =>
       isCodeFile(n) &&
       n !== "index.js" &&
       n !== "index.mjs" &&
-      n !== "index.cjs"
+      n !== "index.cjs",
   ).length;
   const subdirCount = dirEntries.filter(
-    (n) => !n.startsWith(".") && n !== "node_modules"
+    (n) => !n.startsWith(".") && n !== "node_modules",
   ).length;
 
   // Heuristic: at least 4 sibling exportable units at the package root.
@@ -210,7 +244,7 @@ async function looksDestructureStyle(
   // If there's an index.* file, check that it's a barrel re-export rather than
   // the actual implementation (the latter would be a true "barrel" package).
   const indexFile = ["index.mjs", "index.js", "index.cjs"].find((n) =>
-    entries.includes(n)
+    entries.includes(n),
   );
   if (indexFile) {
     let source = "";
@@ -235,7 +269,7 @@ function isCodeFile(name: string): boolean {
 
 export async function detectMemberDir(
   packageDir: string,
-  layout: StructureConfig["layout"]
+  layout: StructureConfig["layout"],
 ): Promise<string | undefined> {
   if (layout === "barrel") return undefined;
   if (layout === "destructure") return ".";
@@ -243,7 +277,7 @@ export async function detectMemberDir(
     KNOWN_MEMBER_DIRS.map(async (c) => ({
       c,
       isDir: await isDirectory(resolve(packageDir, c)),
-    }))
+    })),
   );
   return checks.find((x) => x.isDir)?.c;
 }
@@ -251,7 +285,7 @@ export async function detectMemberDir(
 export async function detectExtensions(
   packageDir: string,
   layout: StructureConfig["layout"],
-  memberDir: string | undefined
+  memberDir: string | undefined,
 ): Promise<string[]> {
   const targetDir =
     layout === "barrel" || !memberDir || memberDir === "."
@@ -277,7 +311,7 @@ export async function detectExtensions(
       } catch {
         // ignore
       }
-    })
+    }),
   );
 
   const allowed = new Set([".js", ".mjs", ".cjs", ".d.ts", ".d.mts", ".d.cts"]);
@@ -287,7 +321,7 @@ export async function detectExtensions(
 export async function detectNaming(
   packageDir: string,
   layout: StructureConfig["layout"],
-  memberDir: string | undefined
+  memberDir: string | undefined,
 ): Promise<StructureConfig["naming"] | undefined> {
   const samples = await sampleFilenames(packageDir, layout, memberDir, 10);
   if (samples.length === 0) return undefined;
@@ -322,7 +356,7 @@ export async function sampleFilenames(
   packageDir: string,
   layout: StructureConfig["layout"],
   memberDir: string | undefined,
-  count: number
+  count: number,
 ): Promise<string[]> {
   if (layout === "barrel") return [];
   if (!memberDir) return [];
@@ -366,7 +400,7 @@ function stripExtension(filename: string): string {
 
 export async function detectNamespace(
   packageDir: string,
-  pkgJson: Record<string, unknown>
+  pkgJson: Record<string, unknown>,
 ): Promise<{ namespace: string | undefined; exportedMembers: string[] }> {
   const entryFile = await resolveEntryFile(packageDir, pkgJson);
   if (!entryFile) return { namespace: undefined, exportedMembers: [] };
@@ -390,7 +424,7 @@ export async function detectNamespace(
 
 async function resolveEntryFile(
   packageDir: string,
-  pkgJson: Record<string, unknown>
+  pkgJson: Record<string, unknown>,
 ): Promise<string | null> {
   const candidates: string[] = [];
   const main = pkgJson.main as string | undefined;
@@ -436,7 +470,7 @@ export async function detectMemberShape(
   packageDir: string,
   layout: StructureConfig["layout"],
   memberDir: string | undefined,
-  _exportedMembers: string[]
+  _exportedMembers: string[],
 ): Promise<{ methods: string[]; hooks: HookPattern[] }> {
   if (layout === "barrel" || !memberDir) {
     return { methods: [], hooks: [] };
@@ -477,7 +511,7 @@ export async function detectMemberShape(
 async function pickMemberFile(
   packageDir: string,
   layout: StructureConfig["layout"],
-  memberDir: string
+  memberDir: string,
 ): Promise<string | null> {
   const dir = resolve(packageDir, memberDir);
   let entries: string[] = [];
@@ -497,7 +531,7 @@ async function pickMemberFile(
       if (s.isDirectory() && layout === "nested") {
         const nestedEntries = await readdir(full);
         const candidate = nestedEntries.find(
-          (name) => name.endsWith(".js") || name.endsWith(".mjs")
+          (name) => name.endsWith(".js") || name.endsWith(".mjs"),
         );
         if (candidate) return resolve(full, candidate);
       }
@@ -509,11 +543,11 @@ async function pickMemberFile(
 }
 
 export function scoreConfidence(
-  inputs: Record<string, unknown>
+  inputs: Record<string, unknown>,
 ): DetectedConfig["confidence"] {
   const total = Object.values(inputs).length;
   const defined = Object.values(inputs).filter(
-    (v) => v !== null && v !== undefined && v !== ""
+    (v) => v !== null && v !== undefined && v !== "",
   ).length;
   if (total === 0) return "low";
   const ratio = defined / total;

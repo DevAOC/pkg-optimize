@@ -21,7 +21,7 @@ describe("detector", () => {
   it("infers nested layout from a fixture with member/<Name>/<sub>/ subdirs", async () => {
     const pkgDir = ws.installFixturePackage(
       "gadget-nested",
-      "@example/test-app"
+      "@example/test-app",
     );
     expect(await detectLayout(pkgDir)).toBe("nested");
   });
@@ -44,7 +44,7 @@ describe("detector", () => {
   it("infers kebab-case naming from kebab-style fixtures", async () => {
     const pkgDir = ws.installFixturePackage(
       "apollo-flat",
-      "@example/kebab-app"
+      "@example/kebab-app",
     );
     expect(await detectNaming(pkgDir, "flat", "operations")).toBe("kebab-case");
   });
@@ -82,7 +82,7 @@ describe("detector", () => {
     const preset = matchPreset("@tanstack/react-query");
     expect(preset).not.toBeNull();
     expect(
-      preset?.patterns?.hooks?.find((h) => h.name === "useMutation")
+      preset?.patterns?.hooks?.find((h) => h.name === "useMutation"),
     ).toBeDefined();
   });
 
@@ -90,7 +90,7 @@ describe("detector", () => {
     const preset = matchPreset("swr");
     expect(preset).not.toBeNull();
     expect(
-      preset?.patterns?.hooks?.find((h) => h.name === "useSWR")
+      preset?.patterns?.hooks?.find((h) => h.name === "useSWR"),
     ).toBeDefined();
   });
 
@@ -99,32 +99,32 @@ describe("detector", () => {
     expect(matchPreset("@orval/core")).not.toBeNull();
     expect(matchPreset("@kubb/swagger-tanstack-query")).not.toBeNull();
     expect(
-      matchPreset("@graphql-codegen/typescript-react-query")
+      matchPreset("@graphql-codegen/typescript-react-query"),
     ).not.toBeNull();
   });
 
   it("matches destructure-style presets (lodash-es, date-fns, react-icons, radix)", () => {
     expect(matchPreset("lodash-es")?.packageStructure?.layout).toBe(
-      "destructure"
+      "destructure",
     );
     expect(matchPreset("date-fns")?.packageStructure?.layout).toBe(
-      "destructure"
+      "destructure",
     );
     expect(matchPreset("react-icons")?.packageStructure?.layout).toBe(
-      "destructure"
+      "destructure",
     );
     expect(matchPreset("react-icons/fa")?.packageStructure?.layout).toBe(
-      "destructure"
+      "destructure",
     );
     expect(
-      matchPreset("@radix-ui/react-dialog")?.packageStructure?.layout
+      matchPreset("@radix-ui/react-dialog")?.packageStructure?.layout,
     ).toBe("destructure");
   });
 
   it("infers destructure layout for a barrel-of-named-exports package", async () => {
     const pkgDir = ws.installFixturePackage(
       "destructure-flat",
-      "@example/destructure-pkg"
+      "@example/destructure-pkg",
     );
     expect(await detectLayout(pkgDir)).toBe("destructure");
     expect(await detectMemberDir(pkgDir, "destructure")).toBe(".");
@@ -135,11 +135,11 @@ describe("detector", () => {
     mkdirSync(pkgRoot, { recursive: true });
     writeFileSync(
       resolve(pkgRoot, "package.json"),
-      JSON.stringify({ name: "tiny-barrel", main: "index.js" })
+      JSON.stringify({ name: "tiny-barrel", main: "index.js" }),
     );
     writeFileSync(
       resolve(pkgRoot, "index.js"),
-      `export const a = 1; export const b = 2;`
+      `export const a = 1; export const b = 2;`,
     );
     expect(await detectLayout(pkgRoot)).toBe("barrel");
   });
@@ -152,6 +152,22 @@ describe("detector", () => {
     expect(detected.packageStructure?.naming).toBe("PascalCase");
     expect(detected.patterns?.namespace).toBe("api");
     expect(["high", "medium", "low"]).toContain(detected.confidence);
+  });
+
+  it("infers nested layout from preset when the package is symlink-hoisted", async () => {
+    ws.installFixturePackageSymlinked(
+      "gadget-nested",
+      "@gadget-client/test-app",
+    );
+    const detected = await detectPackageConfig(
+      "@gadget-client/test-app",
+      ws.root,
+    );
+    expect(detected.packageStructure?.layout).toBe("nested");
+    expect(detected.packageStructure?.memberDir).toBe("models");
+    expect(detected.warnings?.some((w) => /barrel package/i.test(w))).toBe(
+      false,
+    );
   });
 
   it("returns low confidence and warnings when package is not installed", async () => {
@@ -168,13 +184,13 @@ describe("detector", () => {
         c: true,
         d: "y",
         e: "z",
-      })
+      }),
     ).toBe("high");
   });
 
   it('scoreConfidence returns "low" when most are missing', () => {
     expect(
-      scoreConfidence({ a: undefined, b: null, c: "", d: undefined })
+      scoreConfidence({ a: undefined, b: null, c: "", d: undefined }),
     ).toBe("low");
   });
 });
