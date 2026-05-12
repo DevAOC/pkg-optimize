@@ -19,6 +19,8 @@ export {
   detectMemberDir,
   detectNaming,
   detectPackageConfig,
+  resolveAllPackageEntries,
+  resolvePackageEntryAbs,
   scoreConfidence,
 } from "./detector";
 export type { DetectPackageOptions } from "./detector";

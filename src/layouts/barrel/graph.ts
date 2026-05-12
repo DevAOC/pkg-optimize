@@ -3,7 +3,7 @@ import type { ParserOptions } from "@babel/parser";
 import type { File, StringLiteral } from "@babel/types";
 import { readFile } from "node:fs/promises";
 import { dirname, relative, resolve as resolvePath } from "node:path";
-import { resolveExistingModule, resolvePackageEntryAbs } from "../../detector";
+import { resolveAllPackageEntries, resolveExistingModule } from "../../detector";
 import { toCamelCase } from "../../utils";
 import type { BarrelAnalyzeResult } from "./types";
 
@@ -27,6 +27,14 @@ const RESOLVE_EXTS = [
 /**
  * Build the set of files to keep and barrel files to rewrite for a multi-file
  * re-export package. Single-file packages yield keep = { entry } only.
+ *
+ * Dual-build packages (ESM + CJS + standalone `.d.ts` types — common for
+ * generated SDK clients like `@gadget-client/*`) expose several entries through
+ * the conditional `exports` map. We resolve every condition (`import`,
+ * `require`, `default`, `types`) plus the legacy `main` / `module` / `types`
+ * fields and trace each — otherwise pruning would keep only the first resolved
+ * entry (typically the ESM bundle) and silently delete the CJS / `.d.ts`
+ * siblings that bundlers and type-checkers depend on.
  */
 export async function analyzeBarrelPackage(
   packageRoot: string,
@@ -38,35 +46,17 @@ export async function analyzeBarrelPackage(
   signal?: AbortSignal,
 ): Promise<BarrelAnalyzeResult> {
   signal?.throwIfAborted();
-  const entryAbs = await resolvePackageEntryAbs(packageRoot, pkgJson);
-  if (!entryAbs) {
+  const entryAbsPaths = await resolveAllPackageEntries(packageRoot, pkgJson);
+  if (entryAbsPaths.length === 0) {
     return {
       ok: false,
       reason: "Could not resolve package entry file from package.json.",
     };
   }
 
-  const entryRel = toPosixRel(packageRoot, entryAbs);
-  let entrySource: string;
-  try {
-    entrySource = await readFile(entryAbs, "utf-8");
-  } catch {
-    return { ok: false, reason: "Could not read package entry file." };
-  }
-
-  try {
-    parse(entrySource, { ...PARSE_OPTS, sourceFilename: entryRel });
-  } catch {
-    return {
-      ok: false,
-      reason: "Could not parse package entry as JavaScript/TypeScript.",
-    };
-  }
-
   const keepRelPaths = new Set<string>();
   const visitedBarrels = new Set<string>();
 
-  keepRelPaths.add(entryRel);
   keepRelPaths.add("package.json");
 
   for (const ref of allowedFileRefs) {
@@ -78,39 +68,61 @@ export async function analyzeBarrelPackage(
     }
   }
 
-  const surface = await collectExportSurface(
-    packageRoot,
-    entryAbs,
-    new Map(),
-    new Set(),
-    signal,
-  );
-  if (!surface.ok) return surface;
+  for (const entryAbs of entryAbsPaths) {
+    signal?.throwIfAborted();
+    const entryRel = toPosixRel(packageRoot, entryAbs);
+    keepRelPaths.add(entryRel);
 
-  const neededExportNames = new Set<string>();
-  for (const name of surface.names) {
-    if (allowedCamelMembers.has(toCamelCase(name))) {
-      neededExportNames.add(name);
+    // Each entry must at least survive. If it can't be parsed (e.g. a minified
+    // CJS bundle that confuses Babel) we keep the file itself and continue —
+    // refusing to prune is safer than failing the whole package.
+    let entrySource: string;
+    try {
+      entrySource = await readFile(entryAbs, "utf-8");
+    } catch {
+      continue;
     }
-  }
 
-  // (Falling through with an empty neededExportNames is intentional: a package
-  // that's only deep-imported still gets pruned down to entry + package.json +
-  // the explicit allowed file refs.)
+    try {
+      parse(entrySource, { ...PARSE_OPTS, sourceFilename: entryRel });
+    } catch {
+      continue;
+    }
 
-  for (const name of neededExportNames) {
-    const traced = await traceExport(
+    const surface = await collectExportSurface(
       packageRoot,
       entryAbs,
-      name,
+      new Map(),
       new Set(),
       signal,
     );
-    if (!traced.ok) return traced;
-    for (const p of traced.implRelPaths) keepRelPaths.add(p);
-    for (const p of traced.visitedRelPaths) {
-      visitedBarrels.add(p);
-      keepRelPaths.add(p);
+    if (!surface.ok) return surface;
+
+    const neededExportNames = new Set<string>();
+    for (const name of surface.names) {
+      if (allowedCamelMembers.has(toCamelCase(name))) {
+        neededExportNames.add(name);
+      }
+    }
+
+    // (Falling through with an empty neededExportNames is intentional: a
+    // package that's only deep-imported still gets pruned down to entries +
+    // package.json + the explicit allowed file refs.)
+
+    for (const name of neededExportNames) {
+      const traced = await traceExport(
+        packageRoot,
+        entryAbs,
+        name,
+        new Set(),
+        signal,
+      );
+      if (!traced.ok) return traced;
+      for (const p of traced.implRelPaths) keepRelPaths.add(p);
+      for (const p of traced.visitedRelPaths) {
+        visitedBarrels.add(p);
+        keepRelPaths.add(p);
+      }
     }
   }
 

@@ -1,9 +1,24 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { analyzeBarrelPackage } from "../../../src/layouts/barrel/graph";
-import { resolvePackageEntryAbs } from "../../../src/detector";
+import {
+  resolveAllPackageEntries,
+  resolvePackageEntryAbs,
+} from "../../../src/detector";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PACKAGE_FIXTURES = resolve(__dirname, "..", "..", "fixtures", "packages");
 
 describe("resolvePackageEntryAbs", () => {
   let root: string;
@@ -156,12 +171,14 @@ describe("analyzeBarrelPackage", () => {
     }
   });
 
-  it("fails when entry source is not parseable", async () => {
+  it("keeps a single-file barrel even when the entry source is not parseable", async () => {
     root = mkdtempSync(join(tmpdir(), "pkg-opt-barrel-"));
     writeFileSync(
       join(root, "package.json"),
       JSON.stringify({ name: "t", main: "index.js" })
     );
+    // Minified CJS that confuses the parser; the analyzer must keep the entry
+    // (refusing to prune is safer than failing the whole package).
     writeFileSync(join(root, "index.js"), "export {{{");
     const result = await analyzeBarrelPackage(
       root,
@@ -169,9 +186,85 @@ describe("analyzeBarrelPackage", () => {
       new Set(),
       new Set()
     );
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toMatch(/parse/i);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.keepRelPaths.has("index.js")).toBe(true);
+      expect(result.keepRelPaths.has("package.json")).toBe(true);
+    }
+  });
+
+  it("keeps every resolved entry from a dual-bundle exports map", async () => {
+    root = mkdtempSync(join(tmpdir(), "pkg-opt-barrel-"));
+    cpSync(join(PACKAGE_FIXTURES, "gadget-dual-bundle"), root, {
+      recursive: true,
+    });
+    const pkgJson = JSON.parse(
+      readFileSync(join(root, "package.json"), "utf-8"),
+    ) as Record<string, unknown>;
+
+    const resolved = await resolveAllPackageEntries(root, pkgJson);
+    const relResolved = resolved.map((p) =>
+      p.replace(root, "").replace(/^\/+/, ""),
+    );
+    expect(relResolved).toEqual(
+      expect.arrayContaining([
+        "dist-esm/index.js",
+        "dist-cjs/index.js",
+        "types-esm/index.d.ts",
+        "types/index.d.ts",
+      ]),
+    );
+
+    const result = await analyzeBarrelPackage(
+      root,
+      pkgJson,
+      new Set(["customer"]),
+      new Set(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Each entry file must survive — the ESM and CJS runtime bundles plus the
+    // standalone TS declarations bundlers and type-checkers depend on.
+    expect(result.keepRelPaths.has("dist-esm/index.js")).toBe(true);
+    expect(result.keepRelPaths.has("dist-cjs/index.js")).toBe(true);
+    expect(result.keepRelPaths.has("types-esm/index.d.ts")).toBe(true);
+    expect(result.keepRelPaths.has("types/index.d.ts")).toBe(true);
+    expect(result.keepRelPaths.has("package.json")).toBe(true);
+
+    // Allowed member files reachable from any entry stay; unrelated ones do not.
+    expect(result.keepRelPaths.has("dist-esm/internal/Customer.js")).toBe(true);
+    expect(result.keepRelPaths.has("dist-esm/internal/Product.js")).toBe(false);
+  });
+
+  it("ignores entry candidates that don't resolve on disk", async () => {
+    root = mkdtempSync(join(tmpdir(), "pkg-opt-barrel-"));
+    mkdirSync(join(root, "dist-esm"));
+    writeFileSync(join(root, "dist-esm", "index.js"), "export const used = 1;");
+    const pkgJson = {
+      name: "partial",
+      exports: {
+        ".": {
+          import: "./dist-esm/index.js",
+          require: "./dist-cjs/index.js",
+        },
+      },
+    };
+    writeFileSync(join(root, "package.json"), JSON.stringify(pkgJson));
+
+    const resolved = await resolveAllPackageEntries(root, pkgJson);
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]).toMatch(/dist-esm[\\/]+index\.js$/);
+
+    const result = await analyzeBarrelPackage(
+      root,
+      pkgJson,
+      new Set(["used"]),
+      new Set(),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.keepRelPaths.has("dist-esm/index.js")).toBe(true);
     }
   });
 });

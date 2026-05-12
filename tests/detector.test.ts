@@ -130,6 +130,33 @@ describe("detector", () => {
     expect(await detectMemberDir(pkgDir, "destructure")).toBe(".");
   });
 
+  it("classifies dual-bundle packages (dist-esm/dist-cjs/types) as barrel, not destructure", async () => {
+    ws.installFixturePackage(
+      "gadget-dual-bundle",
+      "@example/gadget-dual-bundle",
+    );
+    const detected = await detectPackageConfig(
+      "@example/gadget-dual-bundle",
+      ws.root,
+    );
+    // Without the nested-entry guard, the destructure heuristic fires at the
+    // package root (5 sibling build-output dirs) and the pruner deletes every
+    // one of them. The package must be classified as barrel so the barrel
+    // pruner gets a chance to trace the actual entries.
+    expect(detected.skip).not.toBe(true);
+    expect(detected.packageStructure?.layout).toBe("barrel");
+  });
+
+  it("suppresses destructure detection at root when allowDestructure=false", async () => {
+    const pkgDir = ws.installFixturePackage(
+      "destructure-flat",
+      "@example/destructure-pkg-strict",
+    );
+    expect(await detectLayout(pkgDir, { allowDestructure: false })).toBe(
+      "barrel",
+    );
+  });
+
   it('still classifies a single-file barrel as "barrel"', async () => {
     const pkgRoot = resolve(ws.root, "node_modules", "tiny-barrel");
     mkdirSync(pkgRoot, { recursive: true });

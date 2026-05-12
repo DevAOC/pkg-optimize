@@ -133,6 +133,29 @@ export async function resolvePackageEntryAbs(
   return null;
 }
 
+/**
+ * Resolve every entry the package surfaces (import / require / default / types
+ * conditions plus legacy `main` / `module` / `types`) onto disk. Returns the
+ * absolute paths in the order produced by {@link collectEntrySubpathCandidates},
+ * deduped. Dual-bundle packages (ESM + CJS + types) expose several entries; the
+ * barrel pruner traces each one so none of them are accidentally dropped.
+ */
+export async function resolveAllPackageEntries(
+  packageRoot: string,
+  pkgJson: Record<string, unknown>,
+): Promise<string[]> {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const sp of collectEntrySubpathCandidates(pkgJson)) {
+    const abs = resolve(packageRoot, sp);
+    const hit = await resolveExistingModule(abs);
+    if (!hit || seen.has(hit)) continue;
+    seen.add(hit);
+    out.push(hit);
+  }
+  return out;
+}
+
 const DISCOVERY_SKIP_DIRS = new Set(["node_modules", ".git", ".hg"]);
 const DISCOVERY_MAX_DEPTH = 6;
 
@@ -590,6 +613,7 @@ export async function detectPackageConfig(
 
 export async function detectLayout(
   packageDir: string,
+  opts: { allowDestructure?: boolean } = {},
 ): Promise<StructureConfig["layout"]> {
   let entries: string[] = [];
   try {
@@ -631,7 +655,15 @@ export async function detectLayout(
   // No known member dir. The package itself might be the member dir
   // (`lodash-es`, `date-fns`, `react-icons/fa`, `@radix-ui/*`, etc.) — i.e.
   // each top-level file or subdir is an independently-importable export.
-  if (await looksDestructureStyle(packageDir, entries, dirEntries)) {
+  //
+  // Callers that have already resolved the package's entry into a subdir
+  // (e.g. `dist-esm/index.js`) pass `allowDestructure: false` for this root,
+  // because the root's siblings of that subdir are typically build-output
+  // peers (`dist-cjs/`, `types/`, `src/`, …), not destructure exports.
+  if (
+    opts.allowDestructure !== false &&
+    (await looksDestructureStyle(packageDir, entries, dirEntries))
+  ) {
     return "destructure";
   }
 
@@ -645,20 +677,35 @@ async function pickLayoutInspectionRoot(
   layoutRoot: string;
   layout: StructureConfig["layout"];
 }> {
-  const tryRoots: string[] = [inspectRoot];
   const entryAbs = await resolvePackageEntryAbs(inspectRoot, pkgJson);
+  let entryDir: string | null = null;
   if (entryAbs) {
     const rel = relative(inspectRoot, entryAbs).replace(/\\/g, "/");
-    const entryInsidePkg = rel && !rel.startsWith("..");
+    const entryInsidePkg = !!rel && !rel.startsWith("..");
     const d = dirname(entryAbs);
-    if (entryInsidePkg && d !== inspectRoot) tryRoots.push(d);
+    if (entryInsidePkg && d !== inspectRoot) entryDir = d;
   }
+
+  // When the package entry is bundled into a subdir (e.g. `dist-esm/index.js`)
+  // the entry's parent dir is the meaningful "layout root" — its siblings are
+  // the actual code units. The package root's siblings of that subdir are
+  // typically build-output peers (`dist-cjs/`, `types/`, `src/`, …) so we must
+  // not let the destructure heuristic fire there, or it will treat every
+  // top-level directory as a removable destructure member.
+  const candidates: Array<{ root: string; allowDestructure: boolean }> = [];
+  if (entryDir) {
+    candidates.push({ root: entryDir, allowDestructure: true });
+    candidates.push({ root: inspectRoot, allowDestructure: false });
+  } else {
+    candidates.push({ root: inspectRoot, allowDestructure: true });
+  }
+
   let layout: StructureConfig["layout"] = "barrel";
-  for (const root of tryRoots) {
-    layout = await detectLayout(root);
+  for (const { root, allowDestructure } of candidates) {
+    layout = await detectLayout(root, { allowDestructure });
     if (layout !== "barrel") return { layoutRoot: root, layout };
   }
-  return { layoutRoot: inspectRoot, layout };
+  return { layoutRoot: entryDir ?? inspectRoot, layout };
 }
 
 async function looksDestructureStyle(

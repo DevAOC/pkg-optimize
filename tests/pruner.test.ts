@@ -366,6 +366,62 @@ describe("pruner — barrel layout", () => {
     ).toHaveLength(0);
   });
 
+  it("preserves every resolved entry from a dual-bundle exports map (ESM + CJS + types)", async () => {
+    ws.installFixturePackage(
+      "gadget-dual-bundle",
+      "@example/gadget-dual-bundle",
+    );
+    const cache = new ShakerCache(
+      ".pkg-optimize-cache",
+      "@example/gadget-dual-bundle",
+      ws.root,
+    );
+    await cache.prime();
+
+    const result = await prune({
+      usageMap: {
+        members: new Set(["customer"]),
+        operations: new Set(),
+        files: new Set(),
+      },
+      config: buildResolved("@example/gadget-dual-bundle", {
+        layout: "barrel",
+        naming: "PascalCase",
+        extensions: [".js", ".d.ts"],
+        preserve: [
+          "index.js",
+          "index.d.ts",
+          "types.js",
+          "types.d.ts",
+          "package.json",
+        ],
+      }),
+      sourceDir: cache.getCachedPackageDir(),
+      targetDir: cache.getLivePackageDir(),
+    });
+
+    const live = cache.getLivePackageDir();
+    // Runtime + type entries the package.json declares must all survive —
+    // this regressed before the fix: the destructure pruner removed every
+    // top-level directory at once.
+    expect(existsSync(resolve(live, "dist-esm", "index.js"))).toBe(true);
+    expect(existsSync(resolve(live, "dist-cjs", "index.js"))).toBe(true);
+    expect(existsSync(resolve(live, "types", "index.d.ts"))).toBe(true);
+    expect(existsSync(resolve(live, "types-esm", "index.d.ts"))).toBe(true);
+    expect(existsSync(resolve(live, "package.json"))).toBe(true);
+
+    // Used member implementation files are kept; unused ones are removed.
+    expect(
+      existsSync(resolve(live, "dist-esm", "internal", "Customer.js")),
+    ).toBe(true);
+    expect(
+      existsSync(resolve(live, "dist-esm", "internal", "Product.js")),
+    ).toBe(false);
+    expect(
+      result.warnings.filter((w) => w.toLowerCase().includes("analysis failed")),
+    ).toHaveLength(0);
+  });
+
   it("rewrites the entry barrel and removes unused implementation files", async () => {
     const pkgRoot = resolve(ws.root, "node_modules", "barrel-multi");
     mkdirSync(pkgRoot, { recursive: true });
