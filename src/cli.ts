@@ -4,7 +4,12 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { isAbortError } from "./utils";
 import { ShakerCache } from "./cache";
-import { loadConfig, writeConfig } from "./config";
+import { loadConfig } from "./config";
+import {
+  buildDetectedSnapshot,
+  detectedSnapshotPath,
+  writeDetectedSnapshot,
+} from "./detector";
 import {
   configureLogging,
   dbg,
@@ -157,23 +162,18 @@ export async function runCli(options: CliOptions = {}): Promise<number> {
       results.push(await runOnce(pkg, cwd, signal));
     }
 
-    // Write detected values back on first run.
-    const hasUndetected = config.packages.some((p) => !p._detected);
-    if (hasUndetected) {
+    // Persist the detected snapshot beside the cache so users can inspect
+    // what pkg-optimize inferred without us touching their config file.
+    if (resolved.length > 0) {
       try {
-        await writeConfig(
-          {
-            ...config,
-            packages: config.packages.map((p, i) => ({
-              ...p,
-              _detected: resolved[i]!._detected,
-            })),
-          },
-          configPath
+        const cacheDir = resolved[0]!.cache.dir;
+        await writeDetectedSnapshot(
+          detectedSnapshotPath(cacheDir, cwd),
+          buildDetectedSnapshot(resolved)
         );
       } catch (err) {
         dbg.warn(
-          `Could not persist detected config: ${(err as Error).message}`
+          `Could not persist detected snapshot: ${(err as Error).message}`
         );
       }
     }
@@ -209,16 +209,29 @@ async function runOnce(
   cwd: string,
   signal: AbortSignal
 ): Promise<PruneResult> {
-  const cache = new ShakerCache(pkg.cache.dir, pkg.targetPackage, cwd);
+  if (pkg.detected.skip) {
+    dbg.cli("skip %s: could not resolve package entry", pkg.target);
+    return {
+      packageName: pkg.target,
+      removed: [],
+      restored: [],
+      kept: [],
+      warnings:
+        pkg.detected.warnings ??
+        [`Package "${pkg.target}": could not resolve entry — skipping.`],
+    };
+  }
+
+  const cache = new ShakerCache(pkg.cache.dir, pkg.target, cwd);
 
   if (!(await cache.livePackageExists())) {
     dbg.cli(
       "skip %s: not installed at node_modules/%s",
-      pkg.targetPackage,
-      pkg.targetPackage
+      pkg.target,
+      pkg.target
     );
     return {
-      packageName: pkg.targetPackage,
+      packageName: pkg.target,
       removed: [],
       restored: [],
       kept: [],
@@ -226,7 +239,7 @@ async function runOnce(
         `Package not installed at ${resolve(
           cwd,
           "node_modules",
-          pkg.targetPackage
+          pkg.target
         )}. Skipping.`,
       ],
     };
@@ -237,7 +250,7 @@ async function runOnce(
   await cache.reprime({ signal });
 
   const usageMap = await scanDirs(pkg.scanDirs, cwd, pkg.patterns, {
-    targetPackage: pkg.targetPackage,
+    target: pkg.target,
     signal,
   });
   return prune({

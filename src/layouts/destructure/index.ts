@@ -34,11 +34,11 @@ export async function pruneDestructure(
   if (!(await pathExists(cachedRoot, signal))) {
     dbg.prune(
       "[%s] skip destructure: cached member root missing: %s",
-      config.targetPackage,
+      config.target,
       memberDirName
     );
     result.warnings.push(
-      `Cached member dir ${memberDirName} not found in cache for ${config.targetPackage}.`
+      `Cached member dir ${memberDirName} not found in cache for ${config.target}.`
     );
     return;
   }
@@ -93,7 +93,7 @@ export async function pruneDestructure(
       } else {
         dbg.prune(
           "[%s] remove destructure entry (not referenced): %s",
-          config.targetPackage,
+          config.target,
           fullRel
         );
         await removeIfPresent(liveEntry, soft, result, fullRel, signal);

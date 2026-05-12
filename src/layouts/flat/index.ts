@@ -76,11 +76,11 @@ async function processFlatDir(
   if (!(await pathExists(cachedDir, signal))) {
     dbg.prune(
       "[%s] skip flat dir: cached path missing: %s",
-      config.targetPackage,
+      config.target,
       dirName
     );
     result.warnings.push(
-      `Cached dir ${dirName} not found for ${config.targetPackage}.`
+      `Cached dir ${dirName} not found for ${config.target}.`
     );
     return;
   }
@@ -146,7 +146,7 @@ async function processFlatDir(
       } else {
         dbg.prune(
           "[%s] remove flat entry (not referenced): %s",
-          config.targetPackage,
+          config.target,
           fullRel
         );
         await removeIfPresent(liveFile, soft, result, fullRel, signal);

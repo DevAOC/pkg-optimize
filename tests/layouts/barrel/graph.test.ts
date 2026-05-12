@@ -2,10 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  analyzeBarrelPackage,
-  resolvePackageEntryAbs,
-} from "../../../src/layouts/barrel/graph";
+import { analyzeBarrelPackage } from "../../../src/layouts/barrel/graph";
+import { resolvePackageEntryAbs } from "../../../src/detector";
 
 describe("resolvePackageEntryAbs", () => {
   let root: string;

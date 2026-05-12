@@ -1,13 +1,21 @@
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from "node:path";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
-import { basename, extname, resolve } from "node:path";
-import { isDirectory, pathExists } from "./utils";
+import { isDirectory, pathExists } from "../utils";
 import type {
   DetectedConfig,
   HookPattern,
   PatternsConfig,
   StructureConfig,
-} from "./types";
-import { matchPreset } from "./presets/index";
+} from "../types";
+import { matchPreset } from "../presets/index";
 
 const DEFAULT_PRESERVE = [
   "index.js",
@@ -34,6 +42,241 @@ const KNOWN_MEMBER_DIRS = [
   "hooks",
 ];
 
+// --- Package entry resolution (shared with barrel tracing) -----------------
+
+const RESOLVE_EXTS = [
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".d.ts",
+  ".d.mts",
+  ".d.cts",
+] as const;
+
+/** Resolve `package.json` `exports["."]` / `module` / `main` / default `index.js`. */
+export function resolvePackageEntrySubpath(
+  pkgJson: Record<string, unknown>,
+): string | null {
+  const exports = pkgJson.exports;
+  if (exports && typeof exports === "object" && !Array.isArray(exports)) {
+    const dot = (exports as Record<string, unknown>)["."];
+    if (typeof dot === "string") return normalizeEntrySubpath(dot);
+    if (dot && typeof dot === "object" && !Array.isArray(dot)) {
+      const o = dot as Record<string, unknown>;
+      const cand =
+        (typeof o.import === "string" && o.import) ||
+        (typeof o.default === "string" && o.default) ||
+        (typeof o.require === "string" && o.require);
+      if (cand) return normalizeEntrySubpath(cand);
+    }
+  }
+  const module = pkgJson.module;
+  if (typeof module === "string") return normalizeEntrySubpath(module);
+  const main = pkgJson.main;
+  if (typeof main === "string") return normalizeEntrySubpath(main);
+  return "index.js";
+}
+
+function normalizeEntrySubpath(s: string): string {
+  return s.replace(/^\.\//, "");
+}
+
+export async function resolveExistingModule(
+  absWithoutMandatoryExt: string,
+): Promise<string | null> {
+  if (await pathExists(absWithoutMandatoryExt)) {
+    return absWithoutMandatoryExt;
+  }
+  const ext = extname(absWithoutMandatoryExt);
+  if (!ext) {
+    for (const e of RESOLVE_EXTS) {
+      const withE = absWithoutMandatoryExt + e;
+      if (await pathExists(withE)) return withE;
+    }
+    for (const e of RESOLVE_EXTS) {
+      const idx = join(absWithoutMandatoryExt, "index" + e);
+      if (await pathExists(idx)) return idx;
+    }
+  }
+  return null;
+}
+
+export async function resolvePackageEntryAbs(
+  packageRoot: string,
+  pkgJson: Record<string, unknown>,
+): Promise<string | null> {
+  const subpath = resolvePackageEntrySubpath(pkgJson);
+  if (!subpath) return null;
+  const abs = resolve(packageRoot, subpath);
+  return (await resolveExistingModule(abs)) ?? null;
+}
+
+const DISCOVERY_SKIP_DIRS = new Set(["node_modules", ".git", ".hg"]);
+const DISCOVERY_MAX_DEPTH = 6;
+
+function resolveConfigPath(projectRoot: string, p: string): string {
+  return isAbsolute(p) ? p : resolve(projectRoot, p);
+}
+
+/**
+ * Depth-first search under `installRoot` for a nested directory whose
+ * `package.json` `name` matches `expectedName` and whose entry module resolves.
+ */
+async function findClosestPackageDescendant(
+  installRoot: string,
+  expectedName: string,
+): Promise<{ root: string; pkgJson: Record<string, unknown> } | null> {
+  async function walk(
+    dir: string,
+    depth: number,
+  ): Promise<{ root: string; pkgJson: Record<string, unknown> } | null> {
+    if (depth > DISCOVERY_MAX_DEPTH) return null;
+    const pkgPath = resolve(dir, "package.json");
+    if (await pathExists(pkgPath)) {
+      try {
+        const pj = JSON.parse(
+          await readFile(pkgPath, "utf-8"),
+        ) as Record<string, unknown>;
+        if (pj.name === expectedName) {
+          if (await resolvePackageEntryAbs(dir, pj))
+            return { root: dir, pkgJson: pj };
+        }
+      } catch {
+        // ignore
+      }
+    }
+    let entries: string[] = [];
+    try {
+      entries = await readdir(dir);
+    } catch {
+      return null;
+    }
+    for (const name of entries) {
+      if (DISCOVERY_SKIP_DIRS.has(name)) continue;
+      const sub = resolve(dir, name);
+      if (!(await isDirectory(sub))) continue;
+      const hit = await walk(sub, depth + 1);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  let entries: string[] = [];
+  try {
+    entries = await readdir(installRoot);
+  } catch {
+    return null;
+  }
+  for (const name of entries) {
+    if (DISCOVERY_SKIP_DIRS.has(name)) continue;
+    const sub = resolve(installRoot, name);
+    if (!(await isDirectory(sub))) continue;
+    const hit = await walk(sub, 1);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+async function tryApplyConfiguredEntry(
+  projectRoot: string,
+  entryConfig: string,
+  expectedName: string,
+): Promise<
+  | { ok: true; root: string; pkgJson: Record<string, unknown> }
+  | { ok: false; warnings: string[] }
+> {
+  const abs = resolveConfigPath(projectRoot, entryConfig);
+  if (!(await isDirectory(abs))) {
+    return { ok: false, warnings: [`entry path is not a directory: ${entryConfig}`] };
+  }
+  const pkgPath = resolve(abs, "package.json");
+  if (!(await pathExists(pkgPath))) {
+    return { ok: false, warnings: [`entry path has no package.json: ${entryConfig}`] };
+  }
+  try {
+    const pj = JSON.parse(
+      await readFile(pkgPath, "utf-8"),
+    ) as Record<string, unknown>;
+    if (pj.name !== expectedName) {
+      return {
+        ok: false,
+        warnings: [
+          `entry package.json "name" is "${String(pj.name)}" but target is "${expectedName}"`,
+        ],
+      };
+    }
+    const tryEntry = await resolvePackageEntryAbs(abs, pj);
+    if (!tryEntry) {
+      return {
+        ok: false,
+        warnings: [
+          `Could not resolve a package entry from entry root: ${entryConfig}`,
+        ],
+      };
+    }
+    return { ok: true, root: abs, pkgJson: pj };
+  } catch {
+    return {
+      ok: false,
+      warnings: [`Could not read package.json under entry: ${entryConfig}`],
+    };
+  }
+}
+
+/**
+ * Resolve which directory + package.json to use for layout/namespace:
+ * 1. Config `entry` (if set and valid)
+ * 2. Default `node_modules` install root
+ * 3. Closest nested match under the install root (name + resolvable entry)
+ */
+async function discoverPackageInspectContext(
+  projectRoot: string,
+  installRoot: string,
+  expectedName: string,
+  initialPkgJson: Record<string, unknown>,
+  entryConfig?: string,
+): Promise<{
+  contentRoot: string;
+  pkgJson: Record<string, unknown>;
+  warnings: string[];
+}> {
+  const warnings: string[] = [];
+  let contentRoot = installRoot;
+  let pkgJson = initialPkgJson;
+
+  if (entryConfig) {
+    const applied = await tryApplyConfiguredEntry(
+      projectRoot,
+      entryConfig,
+      expectedName,
+    );
+    if (applied.ok) {
+      contentRoot = applied.root;
+      pkgJson = applied.pkgJson;
+    } else {
+      warnings.push(...applied.warnings);
+    }
+  }
+
+  let entryAbs = await resolvePackageEntryAbs(contentRoot, pkgJson);
+
+  if (!entryAbs) {
+    const nested = await findClosestPackageDescendant(installRoot, expectedName);
+    if (nested) {
+      contentRoot = nested.root;
+      pkgJson = nested.pkgJson;
+      entryAbs = await resolvePackageEntryAbs(contentRoot, pkgJson);
+    }
+  }
+
+  return { contentRoot, pkgJson, warnings };
+}
+
+export type DetectPackageOptions = {
+  /** Optional package root; tried before install path and search. */
+  entry?: string;
+};
+
 /** Resolve symlinked `node_modules/<pkg>` to its physical path for layout scans. */
 async function inspectionPackageRoot(packageDir: string): Promise<string> {
   try {
@@ -52,10 +295,11 @@ async function isSymbolicLinkPath(p: string): Promise<boolean> {
 }
 
 export async function detectPackageConfig(
-  targetPackage: string,
+  target: string,
   projectRoot: string,
+  options: DetectPackageOptions = {},
 ): Promise<DetectedConfig> {
-  const packageDir = resolve(projectRoot, "node_modules", targetPackage);
+  const packageDir = resolve(projectRoot, "node_modules", target);
   const warnings: string[] = [];
 
   if (!(await pathExists(packageDir))) {
@@ -64,7 +308,7 @@ export async function detectPackageConfig(
       packageStructure: {},
       confidence: "low",
       warnings: [
-        `Package "${targetPackage}" not found in node_modules. Auto-detection skipped.`,
+        `Package "${target}" not found in node_modules. Auto-detection skipped.`,
       ],
     };
   }
@@ -75,22 +319,47 @@ export async function detectPackageConfig(
       await readFile(resolve(packageDir, "package.json"), "utf-8"),
     ) as Record<string, unknown>;
   } catch {
-    warnings.push(`Could not read package.json for ${targetPackage}.`);
+    warnings.push(`Could not read package.json for ${target}.`);
   }
 
-  const preset = matchPreset(targetPackage);
-  const inspectRoot = await inspectionPackageRoot(packageDir);
+  const preset = matchPreset(target);
+  const installRoot = await inspectionPackageRoot(packageDir);
 
-  let layout = await detectLayout(inspectRoot);
+  const discovered = await discoverPackageInspectContext(
+    projectRoot,
+    installRoot,
+    target,
+    pkgJson,
+    options.entry,
+  );
+  warnings.push(...discovered.warnings);
+  const { contentRoot, pkgJson: workingPkgJson } = discovered;
+
+  if (!(await resolvePackageEntryAbs(contentRoot, workingPkgJson))) {
+    return {
+      patterns: {},
+      packageStructure: {},
+      confidence: "low",
+      skip: true,
+      warnings: [
+        ...warnings,
+        `Could not resolve package entry for "${target}" after config entry, install root, and closest search — skipping.`,
+      ],
+    };
+  }
+
+  const { layoutRoot, layout: pickedLayout } =
+    await pickLayoutInspectionRoot(contentRoot, workingPkgJson);
+  let layout = pickedLayout;
 
   // Hoisted installs often expose `node_modules/<pkg>` as a symlink (pnpm store,
   // etc.); if layout still reads as "barrel" but a matched preset declares a
   // concrete structure, trust the preset for that hoisted link.
   //
-  // Only apply this when the preset's member tree actually exists on disk.
-  // Otherwise we pick `nested` + `models` from the Gadget preset while the
-  // mirrored cache has no `models/` (scanner still finds `api.*` usage from
-  // source), and nested prune warns / no-ops.
+  // Only apply this when the preset's member tree actually exists on disk
+  // (under the package root and/or under the resolved entry directory — e.g.
+  // `dist/models`). Otherwise we pick `nested` + `models` from the Gadget preset
+  // while the mirrored cache has no matching tree, and nested prune warns / no-ops.
   const symlinkHoistLikely = await isSymbolicLinkPath(packageDir);
   const presetLayout = preset?.packageStructure?.layout;
   if (
@@ -99,43 +368,54 @@ export async function detectPackageConfig(
     presetLayout &&
     presetLayout !== "barrel"
   ) {
-    const memberDirForPreset =
-      (await detectMemberDir(inspectRoot, presetLayout)) ??
-      preset?.packageStructure?.memberDir;
-    const memberTreeRoot =
-      memberDirForPreset && memberDirForPreset !== "."
-        ? resolve(inspectRoot, memberDirForPreset)
-        : inspectRoot;
-    if (await isDirectory(memberTreeRoot)) {
-      layout = presetLayout;
+    const roots =
+      layoutRoot === installRoot ? [installRoot] : [installRoot, layoutRoot];
+    for (const r of roots) {
+      const memberDirForPreset =
+        (await detectMemberDir(r, presetLayout)) ??
+        preset?.packageStructure?.memberDir;
+      const memberTreeRoot =
+        memberDirForPreset && memberDirForPreset !== "."
+          ? resolve(r, memberDirForPreset)
+          : r;
+      if (await isDirectory(memberTreeRoot)) {
+        layout = presetLayout;
+        break;
+      }
     }
   }
 
-  const memberDir = await detectMemberDir(inspectRoot, layout);
+  const rawMemberDir = await detectMemberDir(layoutRoot, layout);
+  const memberDir = await rebaselineMemberDirToPackageRoot(
+    installRoot,
+    layoutRoot,
+    rawMemberDir,
+    layout,
+  );
   const { namespace, exportedMembers } = await detectNamespace(
-    inspectRoot,
-    pkgJson,
+    contentRoot,
+    workingPkgJson,
   );
   const { hooks } = await detectMemberShape(
-    inspectRoot,
+    installRoot,
     layout,
     memberDir,
     exportedMembers,
   );
-  const naming = await detectNaming(inspectRoot, layout, memberDir);
-  const extensions = await detectExtensions(inspectRoot, layout, memberDir);
+  const naming = await detectNaming(installRoot, layout, memberDir);
+  const extensions = await detectExtensions(installRoot, layout, memberDir);
 
   // For destructure-style packages, the scanner relies on import tracking,
   // not on a single namespace identifier — so a missing namespace is fine.
   const namespaceRequired = layout !== "destructure";
   if (namespaceRequired && !namespace && !preset?.patterns?.namespace) {
     warnings.push(
-      `Could not infer namespace for ${targetPackage}. Add patterns.namespace to your config.`,
+      `Could not infer namespace for ${target}. Add patterns.namespace to your config.`,
     );
   }
   if (layout === "barrel") {
     warnings.push(
-      `${targetPackage} is a barrel package — pkg-optimize will trace static re-exports from the package entry, prune unused modules, and rewrite barrel files when analysis succeeds.`,
+      `${target} is a barrel package — pkg-optimize will trace static re-exports from the package entry, prune unused modules, and rewrite barrel files when analysis succeeds.`,
     );
   }
 
@@ -179,7 +459,7 @@ export async function detectPackageConfig(
 
   if (confidence === "low") {
     warnings.push(
-      `Low confidence detection for ${targetPackage}. Review _detected in config and add explicit overrides if needed.`,
+      `Low confidence detection for ${target}. Review the detected snapshot under your cache dir (default: .pkg-optimize-cache/_detected.json) and add explicit overrides in your config if needed.`,
     );
   }
 
@@ -234,6 +514,29 @@ export async function detectLayout(
   }
 
   return "barrel";
+}
+
+async function pickLayoutInspectionRoot(
+  inspectRoot: string,
+  pkgJson: Record<string, unknown>,
+): Promise<{
+  layoutRoot: string;
+  layout: StructureConfig["layout"];
+}> {
+  const tryRoots: string[] = [inspectRoot];
+  const entryAbs = await resolvePackageEntryAbs(inspectRoot, pkgJson);
+  if (entryAbs) {
+    const rel = relative(inspectRoot, entryAbs).replace(/\\/g, "/");
+    const entryInsidePkg = rel && !rel.startsWith("..");
+    const d = dirname(entryAbs);
+    if (entryInsidePkg && d !== inspectRoot) tryRoots.push(d);
+  }
+  let layout: StructureConfig["layout"] = "barrel";
+  for (const root of tryRoots) {
+    layout = await detectLayout(root);
+    if (layout !== "barrel") return { layoutRoot: root, layout };
+  }
+  return { layoutRoot: inspectRoot, layout };
 }
 
 async function looksDestructureStyle(
@@ -294,6 +597,22 @@ export async function detectMemberDir(
     })),
   );
   return checks.find((x) => x.isDir)?.c;
+}
+
+async function rebaselineMemberDirToPackageRoot(
+  inspectRoot: string,
+  layoutRoot: string,
+  raw: string | undefined,
+  layout: StructureConfig["layout"],
+): Promise<string | undefined> {
+  if (layout === "barrel" || !raw || raw === ".") return raw;
+  if (layoutRoot === inspectRoot) return raw;
+  const abs = resolve(layoutRoot, raw);
+  const rel = relative(inspectRoot, abs).replace(/\\/g, "/");
+  if (!rel || rel.startsWith("..")) {
+    return (await detectMemberDir(inspectRoot, layout)) ?? undefined;
+  }
+  return rel;
 }
 
 export async function detectExtensions(
@@ -416,7 +735,7 @@ export async function detectNamespace(
   packageDir: string,
   pkgJson: Record<string, unknown>,
 ): Promise<{ namespace: string | undefined; exportedMembers: string[] }> {
-  const entryFile = await resolveEntryFile(packageDir, pkgJson);
+  const entryFile = await resolvePackageEntryAbs(packageDir, pkgJson);
   if (!entryFile) return { namespace: undefined, exportedMembers: [] };
 
   let source = "";
@@ -434,26 +753,6 @@ export async function detectNamespace(
   const exportedMembers = extractExportedNames(source);
 
   return { namespace, exportedMembers };
-}
-
-async function resolveEntryFile(
-  packageDir: string,
-  pkgJson: Record<string, unknown>,
-): Promise<string | null> {
-  const candidates: string[] = [];
-  const main = pkgJson.main as string | undefined;
-  const moduleField = pkgJson.module as string | undefined;
-  const types = pkgJson.types as string | undefined;
-  if (moduleField) candidates.push(moduleField);
-  if (main) candidates.push(main);
-  if (types) candidates.push(types);
-  candidates.push("index.js", "index.mjs", "index.cjs", "index.d.ts");
-
-  for (const c of candidates) {
-    const p = resolve(packageDir, c);
-    if (await pathExists(p)) return p;
-  }
-  return null;
 }
 
 function extractFirstMatch(source: string, regex: RegExp): string | undefined {

@@ -54,7 +54,7 @@ src/
   cache.ts        # ShakerCache: snapshot + restore of pruned files
   cli.ts          # CLI entry + implementation
   config.ts       # Config loading, validation, preset resolution
-  detector.ts     # Package layout/naming auto-detection
+  detector/       # Package layout/naming auto-detection + detected snapshot store
   index.ts        # Public programmatic API
   logger.ts       # `debug` namespaces (`dbg`) + `configureLogging` / `primeErrorDebug`
   pruner.ts       # Decides what to remove/restore from a target package

@@ -33,7 +33,7 @@ export async function pruneBarrel(
     ) as Record<string, unknown>;
   } catch {
     result.warnings.push(
-      `Could not read package.json for ${config.targetPackage} — barrel pruning skipped.`
+      `Could not read package.json for ${config.target} — barrel pruning skipped.`
     );
     return;
   }
@@ -48,7 +48,7 @@ export async function pruneBarrel(
 
   if (!plan.ok) {
     result.warnings.push(
-      `${config.targetPackage}: barrel analysis failed (${plan.reason}) — pruning skipped.`
+      `${config.target}: barrel analysis failed (${plan.reason}) — pruning skipped.`
     );
     return;
   }
@@ -87,7 +87,7 @@ export async function pruneBarrel(
         }
         dbg.prune(
           "[%s] remove barrel package file (not referenced): %s",
-          config.targetPackage,
+          config.target,
           rel
         );
         await removeIfPresent(livePath, soft, result, rel, signal);
@@ -115,7 +115,7 @@ export async function pruneBarrel(
         });
         if (!rewritten.ok || !rewritten.code.trim()) {
           result.warnings.push(
-            `${config.targetPackage}: could not safely rewrite barrel file "${rel}" — copied verbatim from cache.`
+            `${config.target}: could not safely rewrite barrel file "${rel}" — copied verbatim from cache.`
           );
           await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
           return;
@@ -128,10 +128,10 @@ export async function pruneBarrel(
           writeFile(livePath, rewritten.code, "utf8")
         );
         if (!existed) {
-          dbg.prune("[%s] restored (rewritten) %s", config.targetPackage, rel);
+          dbg.prune("[%s] restored (rewritten) %s", config.target, rel);
           result.restored.push(rel);
         } else {
-          dbg.prune("[%s] kept (rewritten) %s", config.targetPackage, rel);
+          dbg.prune("[%s] kept (rewritten) %s", config.target, rel);
           result.kept.push(rel);
         }
         return;
@@ -144,7 +144,7 @@ export async function pruneBarrel(
 
   dbg.prune(
     "[%s] barrel prune: keep=%d barrel rewrites=%d",
-    config.targetPackage,
+    config.target,
     keep.size,
     plan.barrelRelPaths.size
   );

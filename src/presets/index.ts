@@ -54,7 +54,7 @@ const PRESETS: Record<string, Partial<PackageConfig>> = {
 };
 
 /**
- * Pattern-matched presets: if `targetPackage` matches, the preset is auto-applied
+ * Pattern-matched presets: if the package `target` matches, the preset is auto-applied
  * even when no explicit `extends` is set in the user's config.
  */
 const PACKAGE_PATTERNS: Array<{ pattern: RegExp; preset: string }> = [
@@ -93,9 +93,9 @@ export function loadPreset(name: string): Partial<PackageConfig> | null {
 }
 
 export function matchPreset(
-  targetPackage: string
+  target: string
 ): Partial<PackageConfig> | null {
-  const match = PACKAGE_PATTERNS.find((p) => p.pattern.test(targetPackage));
+  const match = PACKAGE_PATTERNS.find((p) => p.pattern.test(target));
   return match ? loadPreset(match.preset) : null;
 }
 

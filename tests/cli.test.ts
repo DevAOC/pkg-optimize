@@ -71,7 +71,7 @@ describe("runCli", () => {
       resolve(ws.root, "pkg-optimize.config.json"),
       JSON.stringify({
         scanDirs: ["web"],
-        packages: [{ targetPackage: "@scope/not-installed" }],
+        packages: [{ target: "@scope/not-installed" }],
       })
     );
     expect(await runCli({ argv: ["run"], cwd: ws.root })).toBe(0);
@@ -82,7 +82,7 @@ describe("runCli", () => {
       resolve(ws.root, "pkg-optimize.config.json"),
       JSON.stringify({
         scanDirs: ["web"],
-        packages: [{ targetPackage: "any" }],
+        packages: [{ target: "any" }],
       })
     );
     const code = await runCli({
@@ -98,27 +98,37 @@ describe("runCli", () => {
     ws.installFixtureSource({ dirs: ["web"] });
     ws.writeConfig({
       scanDirs: ["web"],
-      packages: [{ targetPackage: "@example/test-app" }],
+      packages: [{ target: "@example/test-app" }],
     });
     expect(await runCli({ argv: [], cwd: ws.root })).toBe(0);
   });
 
-  it("persists _detected into config after first successful run", async () => {
+  it("writes detected snapshot to the cache dir without touching the user's config", async () => {
     ws.installFixturePackage("gadget-nested", "@example/test-app");
     ws.installFixtureSource({ dirs: ["web"] });
-    ws.writeConfig({
+    const configJson = {
       scanDirs: ["web"],
-      packages: [{ targetPackage: "@example/test-app" }],
-    });
+      packages: [{ target: "@example/test-app" }],
+    };
+    ws.writeConfig(configJson);
     expect(await runCli({ argv: ["run"], cwd: ws.root })).toBe(0);
-    const raw = readFileSync(
+
+    const configRaw = readFileSync(
       resolve(ws.root, "pkg-optimize.config.json"),
       "utf8"
     );
-    const parsed = JSON.parse(raw) as {
-      packages: Array<{ _detected?: unknown }>;
+    expect(JSON.parse(configRaw)).toEqual(configJson);
+
+    const snapshotRaw = readFileSync(
+      resolve(ws.root, ".pkg-optimize-cache", "_detected.json"),
+      "utf8"
+    );
+    const snapshot = JSON.parse(snapshotRaw) as {
+      version: number;
+      packages: Record<string, { confidence?: unknown }>;
     };
-    expect(parsed.packages[0]?._detected).toBeDefined();
+    expect(snapshot.version).toBe(1);
+    expect(snapshot.packages["@example/test-app"]?.confidence).toBeDefined();
   });
 
   it("watch mode stops cleanly when signal is aborted", async () => {
@@ -126,7 +136,7 @@ describe("runCli", () => {
     ws.installFixtureSource({ dirs: ["web"] });
     ws.writeConfig({
       scanDirs: ["web"],
-      packages: [{ targetPackage: "@example/test-app" }],
+      packages: [{ target: "@example/test-app" }],
     });
     const ac = new AbortController();
     const done = runCli({

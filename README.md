@@ -88,7 +88,7 @@ Create `pkg-optimize.config.json` at the root of your project:
 ```json
 {
   "scanDirs": ["src"],
-  "packages": [{ "targetPackage": "@example/generated-client" }]
+  "packages": [{ "target": "@example/generated-client" }]
 }
 ```
 
@@ -114,8 +114,8 @@ Add `.pkg-optimize-cache/` to your `.gitignore`:
 
 ## How it works
 
-1. **Detect.** On first run the detector inspects your target package and infers `patterns` (how the package is referenced in source) and `packageStructure` (how it's organized on disk). The result is written back to your config under a `_detected` key so you can see what it inferred.
-2. **Cache.** A pristine copy of the target package is stored in `.pkg-optimize-cache/`. The pruner always reads from there and writes to `node_modules/<targetPackage>` — never the other way around. This is what makes restores work.
+1. **Detect.** On each run the detector inspects your target package and infers `patterns` (how the package is referenced in source) and `packageStructure` (how it's organized on disk). The result is written to `.pkg-optimize-cache/_detected.json` (one entry per target) so you can inspect what was inferred without us touching your config file.
+2. **Cache.** A pristine copy of the target package is stored in `.pkg-optimize-cache/`. The pruner always reads from there and writes to `node_modules/<target>` — never the other way around. This is what makes restores work.
 3. **Scan.** AST-based scanner walks your source directories and builds a usage map of which members and operations are actually referenced.
 4. **Diff.** The diff is bidirectional:
    - In live but not in usage → **remove**
@@ -226,10 +226,10 @@ If you'd rather have a single root config covering multiple packages, list them 
 {
   "scanDirs": ["apps/web/src", "apps/admin/src", "packages/ui/src"],
   "packages": [
-    { "targetPackage": "@my-org/api-client" },
-    { "targetPackage": "@my-org/icons" },
+    { "target": "@my-org/api-client" },
+    { "target": "@my-org/icons" },
     {
-      "targetPackage": "lodash-es",
+      "target": "lodash-es",
       "scanDirs": ["apps/web/src", "apps/admin/src"]
     }
   ]
@@ -245,7 +245,7 @@ pkg-optimize is designed to fail safe in CI:
 - A package it can't analyze — **barrel** layout where static re-export analysis fails, missing in `node_modules`, unreadable, etc. — is **skipped with a warning** and the exit code stays `0`. Your build still runs against the unpruned package.
 - A package referenced by an unresolvable dynamic import (`await import(somePath)`, `await import('pkg')` with no subpath, etc.) is **kept whole**. The scanner detects the dynamic reference, the pruner switches to restore-only mode, and a warning is emitted. Code-split chunks never break at runtime because the file they import was deleted.
 - A malformed `pkg-optimize.config.json` exits non-zero immediately so a bad config never silently breaks builds.
-- The cache is **never** mutated based on usage; only `node_modules/<targetPackage>/` is. If anything ever goes wrong, `rm -rf node_modules .pkg-optimize-cache && npm ci` rebuilds the world.
+- The cache is **never** mutated based on usage; only `node_modules/<target>/` is. If anything ever goes wrong, `rm -rf node_modules .pkg-optimize-cache && npm ci` rebuilds the world.
 
 ### Pairing with bundle-size checks
 
@@ -297,7 +297,7 @@ Options:
 ```json
 {
   "scanDirs": ["src"],
-  "packages": [{ "targetPackage": "@example/generated-client" }]
+  "packages": [{ "target": "@example/generated-client" }]
 }
 ```
 
@@ -307,9 +307,9 @@ Options:
 {
   "scanDirs": ["src", "extensions"],
   "packages": [
-    { "targetPackage": "@example/generated-client" },
+    { "target": "@example/generated-client" },
     {
-      "targetPackage": "@example/analytics-client",
+      "target": "@example/analytics-client",
       "scanDirs": ["src/analytics"]
     }
   ]
@@ -328,7 +328,7 @@ Options:
   },
   "packages": [
     {
-      "targetPackage": "@example/generated-client",
+      "target": "@example/generated-client",
       "extends": "pkg-optimize/presets/urql",
       "scanDirs": ["src"],
       "allow": {
@@ -461,7 +461,7 @@ Fifteen built-in presets ship out of the box. They are auto-applied based on the
 | `react-icons` | `react-icons`, `react-icons/*` | One file per icon, PascalCase.                      |
 | `radix`       | `@radix-ui/*`                  | One file per component, PascalCase.                 |
 
-The codegen presets describe **how a framework's hooks reference generated symbols**; your `targetPackage` is still the generated client (e.g. `./src/generated/graphql`). React, Preact, and other UI frameworks themselves don't ship a preset because their built-in hooks (`useState`, `useEffect`, …) don't reference any generated symbols.
+The codegen presets describe **how a framework's hooks reference generated symbols**; your `target` is still the generated client (e.g. `./src/generated/graphql`). React, Preact, and other UI frameworks themselves don't ship a preset because their built-in hooks (`useState`, `useEffect`, …) don't reference any generated symbols.
 
 The general-purpose presets target popular destructure-style libraries directly. You can use them as-is or as templates for your own packages.
 
@@ -471,7 +471,7 @@ Explicit usage:
 {
   "packages": [
     {
-      "targetPackage": "./src/generated/graphql",
+      "target": "./src/generated/graphql",
       "extends": "pkg-optimize/presets/urql"
     }
   ]
@@ -486,10 +486,10 @@ Same shape — just point at the package and let the destructure preset (or auto
 {
   "scanDirs": ["src"],
   "packages": [
-    { "targetPackage": "lodash-es" },
-    { "targetPackage": "date-fns" },
-    { "targetPackage": "react-icons/fa" },
-    { "targetPackage": "@radix-ui/react-dialog" }
+    { "target": "lodash-es" },
+    { "target": "date-fns" },
+    { "target": "react-icons/fa" },
+    { "target": "@radix-ui/react-dialog" }
   ]
 }
 ```
@@ -527,7 +527,7 @@ for (const pkg of config.packages) {
   const resolved = await resolvePackageConfig(pkg, config, process.cwd());
   const cache = new ShakerCache(
     resolved.cache.dir,
-    resolved.targetPackage,
+    resolved.target,
     process.cwd()
   );
   if (!cache.isCached()) cache.prime();

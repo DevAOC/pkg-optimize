@@ -5,6 +5,7 @@ import { ShakerCache } from "../../src/cache";
 import { prune } from "../../src/pruner";
 import { scanFile } from "../../src/scanner";
 import type {
+  DetectedConfig,
   PatternsConfig,
   ResolvedPackageConfig,
   StructureConfig,
@@ -30,20 +31,23 @@ function emptyUsage(): UsageMap {
   return { members: new Set(), operations: new Set(), files: new Set() };
 }
 
+const TEST_DETECTED: DetectedConfig = { confidence: "high" };
+
 function buildResolved(
-  targetPackage: string,
+  target: string,
   structure: StructureConfig,
   patterns: PatternsConfig = DESTRUCTURE_PATTERNS,
   allow?: { include?: string[] }
 ): ResolvedPackageConfig {
   return {
-    targetPackage,
+    target,
     allow,
     patterns,
     packageStructure: structure,
     scanDirs: ["src"],
     cache: { dir: ".pkg-optimize-cache" },
     watch: { debounceMs: 300, softPruneInDev: true },
+    detected: TEST_DETECTED,
   };
 }
 
@@ -59,7 +63,7 @@ describe("scanner — import tracking", () => {
     writeFileSync(f, `import { debounce, throttle } from 'lodash-es';`);
     const usage = emptyUsage();
     await scanFile(f, DESTRUCTURE_PATTERNS, usage, {
-      targetPackage: "lodash-es",
+      target: "lodash-es",
     });
     expect(usage.members.has("debounce")).toBe(true);
     expect(usage.members.has("throttle")).toBe(true);
@@ -70,7 +74,7 @@ describe("scanner — import tracking", () => {
     writeFileSync(f, `import { debounce as d } from 'lodash-es';`);
     const usage = emptyUsage();
     await scanFile(f, DESTRUCTURE_PATTERNS, usage, {
-      targetPackage: "lodash-es",
+      target: "lodash-es",
     });
     expect(usage.members.has("debounce")).toBe(true);
     expect(usage.members.has("d")).toBe(false);
@@ -89,7 +93,7 @@ describe("scanner — import tracking", () => {
       f,
       { ...DESTRUCTURE_PATTERNS, namespace: "irrelevant" },
       usage,
-      { targetPackage: "lodash" }
+      { target: "lodash" }
     );
     expect(usage.members.has("debounce")).toBe(true);
     expect(usage.members.has("throttle")).toBe(true);
@@ -105,7 +109,7 @@ describe("scanner — import tracking", () => {
     );
     const usage = emptyUsage();
     await scanFile(f, DESTRUCTURE_PATTERNS, usage, {
-      targetPackage: "date-fns",
+      target: "date-fns",
     });
     expect(usage.members.has("format")).toBe(true);
     expect(usage.members.has("parseISO")).toBe(true);
@@ -120,7 +124,7 @@ describe("scanner — import tracking", () => {
     );
     const usage = emptyUsage();
     await scanFile(f, DESTRUCTURE_PATTERNS, usage, {
-      targetPackage: "date-fns",
+      target: "date-fns",
     });
     expect(usage.files.has("format")).toBe(true);
     expect(usage.files.has("addDays")).toBe(true);
@@ -131,7 +135,7 @@ describe("scanner — import tracking", () => {
     writeFileSync(f, `import 'react-spectrum/Button/style.css';`);
     const usage = emptyUsage();
     await scanFile(f, DESTRUCTURE_PATTERNS, usage, {
-      targetPackage: "react-spectrum",
+      target: "react-spectrum",
     });
     expect(usage.files.has("Button/style")).toBe(true);
   });
@@ -140,7 +144,7 @@ describe("scanner — import tracking", () => {
     const f = resolve(ws.root, "a.ts");
     writeFileSync(f, `import x from 'pkg/sub/file.mjs';`);
     const usage = emptyUsage();
-    await scanFile(f, DESTRUCTURE_PATTERNS, usage, { targetPackage: "pkg" });
+    await scanFile(f, DESTRUCTURE_PATTERNS, usage, { target: "pkg" });
     expect(usage.files.has("sub/file")).toBe(true);
   });
 
@@ -154,14 +158,14 @@ describe("scanner — import tracking", () => {
     );
     const usage = emptyUsage();
     await scanFile(f, DESTRUCTURE_PATTERNS, usage, {
-      targetPackage: "lodash-es",
+      target: "lodash-es",
     });
     expect(usage.members.has("debounce")).toBe(true);
     expect(usage.members.has("useState")).toBe(false);
     expect(usage.members.has("Button")).toBe(false);
   });
 
-  it("does no import tracking when targetPackage is omitted", async () => {
+  it("does no import tracking when target is omitted", async () => {
     const f = resolve(ws.root, "a.ts");
     writeFileSync(f, `import { debounce } from 'lodash-es';`);
     const usage = emptyUsage();

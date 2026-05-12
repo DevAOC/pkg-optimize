@@ -15,7 +15,7 @@ describe("startWatcher", () => {
     ws.installFixtureSource({ dirs: ["web"] });
     ws.writeConfig({
       scanDirs: ["web"],
-      packages: [{ targetPackage: "@example/test-app" }],
+      packages: [{ target: "@example/test-app" }],
     });
     const { config, configPath } = await loadConfig(ws.root);
     const stop = await startWatcher({
@@ -31,7 +31,7 @@ describe("startWatcher", () => {
     ws.installFixtureSource({ dirs: ["web"] });
     ws.writeConfig({
       scanDirs: ["web"],
-      packages: [{ targetPackage: "@example/test-app" }],
+      packages: [{ target: "@example/test-app" }],
     });
     const { config, configPath } = await loadConfig(ws.root);
     const ac = new AbortController();

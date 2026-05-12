@@ -2,7 +2,12 @@ import chokidar from "chokidar";
 import _debounce from "lodash.debounce";
 import { resolve } from "node:path";
 import { ShakerCache } from "./cache";
-import { loadConfig, writeConfig } from "./config";
+import { loadConfig } from "./config";
+import {
+  buildDetectedSnapshot,
+  detectedSnapshotPath,
+  writeDetectedSnapshot,
+} from "./detector";
 import { pathExists } from "./utils";
 import { dbg, emitResult } from "./logger";
 import { prune } from "./pruner";
@@ -37,9 +42,10 @@ export async function startWatcher(
   // Prime caches and run an initial prune.
   for (const pkg of resolvedPackages) {
     signal?.throwIfAborted();
+    if (pkg.detected.skip) continue;
     const cache = new ShakerCache(
       pkg.cache.dir,
-      pkg.targetPackage,
+      pkg.target,
       projectRoot
     );
     if (!(await cache.isCached()) && (await cache.livePackageExists())) {
@@ -54,12 +60,13 @@ export async function startWatcher(
     );
   }
 
-  await writeDetectedToConfig(config, resolvedPackages, configPath, signal);
+  await persistDetectedSnapshot(resolvedPackages, projectRoot);
 
   const packagePruners = new Map<string, ReturnType<typeof debounce>>();
   for (const pkg of resolvedPackages) {
+    if (pkg.detected.skip) continue;
     packagePruners.set(
-      pkg.targetPackage,
+      pkg.target,
       debounce((reason: string) => {
         void (async () => {
           try {
@@ -72,7 +79,7 @@ export async function startWatcher(
             );
           } catch (err) {
             dbg.error(
-              `[${pkg.targetPackage}] prune failed: ${(err as Error).message}`
+              `[${pkg.target}] prune failed: ${(err as Error).message}`
             );
           }
         })();
@@ -80,10 +87,11 @@ export async function startWatcher(
     );
   }
 
-  const minDebounce = Math.min(
-    ...resolvedPackages.map((p) => p.watch.debounceMs),
-    300
-  );
+  const activePackages = resolvedPackages.filter((p) => !p.detected.skip);
+  const minDebounce =
+    activePackages.length > 0
+      ? Math.min(...activePackages.map((p) => p.watch.debounceMs), 300)
+      : 300;
   const allPackagesPruner = debounce(async (reason: string) => {
     signal?.throwIfAborted();
     dbg.info(`Re-scanning all packages (${reason})...`);
@@ -103,12 +111,13 @@ export async function startWatcher(
 
   const packageWatchers: chokidar.FSWatcher[] = [];
   for (const pkg of resolvedPackages) {
+    if (pkg.detected.skip) continue;
     const cache = new ShakerCache(
       pkg.cache.dir,
-      pkg.targetPackage,
+      pkg.target,
       projectRoot
     );
-    const packageDir = resolve(projectRoot, "node_modules", pkg.targetPackage);
+    const packageDir = resolve(projectRoot, "node_modules", pkg.target);
     if (!(await pathExists(packageDir, signal))) continue;
 
     const watcher = chokidar
@@ -139,16 +148,16 @@ export async function startWatcher(
             if (reprimed) {
               dbg.watcher(
                 "[%s] live package file set changed — reprimed cache, scheduling prune",
-                pkg.targetPackage
+                pkg.target
               );
               dbg.info(
-                `[${pkg.targetPackage}] package changed externally — re-priming cache`
+                `[${pkg.target}] package changed externally — re-priming cache`
               );
-              packagePruners.get(pkg.targetPackage)?.("package updated");
+              packagePruners.get(pkg.target)?.("package updated");
             }
           } catch (err) {
             dbg.error(
-              `[${pkg.targetPackage}] cache reprime failed: ${
+              `[${pkg.target}] cache reprime failed: ${
                 (err as Error).message
               }`
             );
@@ -179,6 +188,7 @@ export async function startWatcher(
         const next = await loadConfig(projectRoot);
         config = next.config;
         resolvedPackages = await resolveAllPackages(config, projectRoot);
+        await persistDetectedSnapshot(resolvedPackages, projectRoot);
         for (const pkg of resolvedPackages) {
           signal?.throwIfAborted();
           await runPruneForPackage(
@@ -201,7 +211,7 @@ export async function startWatcher(
   );
   dbg.watcher(
     "watch roots: packages=%s scanDirs=%s config=%s",
-    resolvedPackages.map((p) => p.targetPackage).join(", "),
+    resolvedPackages.map((p) => p.target).join(", "),
     allScanDirs.join(", "),
     configPath
   );
@@ -223,25 +233,30 @@ async function runPruneForPackage(
   signal?: AbortSignal
 ): Promise<void> {
   signal?.throwIfAborted();
-  dbg.info(`[${pkg.targetPackage}] Re-scanning (${reason})...`);
+  if (pkg.detected.skip) {
+    dbg.watcher("[%s] skip: could not resolve package entry", pkg.target);
+    dbg.warn(`[${pkg.target}] could not resolve package entry — skipping`);
+    return;
+  }
+  dbg.info(`[${pkg.target}] Re-scanning (${reason})...`);
   dbg.watcher(
     "[%s] prune run reason=%s soft=%s",
-    pkg.targetPackage,
+    pkg.target,
     reason,
     String(opts.soft)
   );
-  const cache = new ShakerCache(pkg.cache.dir, pkg.targetPackage, projectRoot);
+  const cache = new ShakerCache(pkg.cache.dir, pkg.target, projectRoot);
   if (!(await cache.isCached())) {
     if (await cache.livePackageExists()) {
       await cache.prime({ signal });
     } else {
-      dbg.watcher("[%s] skip: package not installed", pkg.targetPackage);
-      dbg.warn(`[${pkg.targetPackage}] package not installed — skipping`);
+      dbg.watcher("[%s] skip: package not installed", pkg.target);
+      dbg.warn(`[${pkg.target}] package not installed — skipping`);
       return;
     }
   }
   const usageMap = await scanDirs(pkg.scanDirs, projectRoot, pkg.patterns, {
-    targetPackage: pkg.targetPackage,
+    target: pkg.target,
     signal,
   });
   const result = await prune({
@@ -264,24 +279,18 @@ async function resolveAllPackages(
   );
 }
 
-async function writeDetectedToConfig(
-  config: ShakerConfig,
+async function persistDetectedSnapshot(
   resolved: ResolvedPackageConfig[],
-  configPath: string,
-  signal?: AbortSignal
+  projectRoot: string
 ): Promise<void> {
-  let dirty = false;
-  const updated = {
-    ...config,
-    packages: config.packages.map((pkg, i) => {
-      if (!pkg._detected && resolved[i]?._detected) {
-        dirty = true;
-        return { ...pkg, _detected: resolved[i]!._detected };
-      }
-      return pkg;
-    }),
-  };
-  if (dirty && (await pathExists(configPath, signal))) {
-    await writeConfig(updated, configPath);
+  if (resolved.length === 0) return;
+  try {
+    const cacheDir = resolved[0]!.cache.dir;
+    await writeDetectedSnapshot(
+      detectedSnapshotPath(cacheDir, projectRoot),
+      buildDetectedSnapshot(resolved)
+    );
+  } catch (err) {
+    dbg.warn(`Could not persist detected snapshot: ${(err as Error).message}`);
   }
 }

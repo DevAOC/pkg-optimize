@@ -20,7 +20,7 @@ describe("config", () => {
     const configPath = resolve(ws.root, "pkg-optimize.config.json");
     writeFileSync(
       configPath,
-      JSON.stringify({ packages: [{ targetPackage: "a" }] })
+      JSON.stringify({ packages: [{ target: "a" }] })
     );
     const nested = resolve(ws.root, "a", "b", "c");
     mkdirSync(nested, { recursive: true });
@@ -34,7 +34,7 @@ describe("config", () => {
   it("throws clearly on invalid config shape", () => {
     expect(() =>
       validate({
-        packages: [{ targetPackage: "x", allow: { include: "not-array" } }],
+        packages: [{ target: "x", allow: { include: "not-array" } }],
       })
     ).toThrow();
   });
@@ -44,8 +44,8 @@ describe("config", () => {
       {
         scanDirs: ["web"],
         packages: [
-          { targetPackage: "a" },
-          { targetPackage: "b", scanDirs: ["extensions"] },
+          { target: "a" },
+          { target: "b", scanDirs: ["extensions"] },
         ],
       },
       ws.root
@@ -65,15 +65,30 @@ describe("config", () => {
       scanDirs: ["web"],
       packages: [
         {
-          targetPackage: "@example/generated-client",
+          target: "@example/generated-client",
           allow: { include: ["authSession"] },
         },
       ],
     });
     const { config } = await loadConfig(ws.root);
     expect(config.packages.length).toBe(1);
-    expect(config.packages[0].targetPackage).toBe("@example/generated-client");
+    expect(config.packages[0].target).toBe("@example/generated-client");
     expect(configPath).toBe(resolve(ws.root, "pkg-optimize.config.json"));
+  });
+
+  it("normalizes legacy targetPackage to target", () => {
+    const config = validate({
+      packages: [{ targetPackage: "lodash-es" }],
+    });
+    expect(config.packages[0].target).toBe("lodash-es");
+  });
+
+  it("accepts optional entry on packages", () => {
+    expect(() =>
+      validate({
+        packages: [{ target: "x", entry: "../../vendor/pkg" }],
+      })
+    ).not.toThrow();
   });
 
   it("rejects legacy field names (modelArgIndex / depth.model)", () => {
@@ -81,7 +96,7 @@ describe("config", () => {
       validate({
         packages: [
           {
-            targetPackage: "x",
+            target: "x",
             patterns: {
               namespace: "api",
               accessStyle: "member",
@@ -96,7 +111,7 @@ describe("config", () => {
       validate({
         packages: [
           {
-            targetPackage: "x",
+            target: "x",
             patterns: {
               namespace: "api",
               accessStyle: "member",
@@ -120,7 +135,7 @@ describe("config", () => {
       validate({
         packages: [
           {
-            targetPackage: "x",
+            target: "x",
             patterns: {
               namespace: "api",
               accessStyle: "member",
@@ -149,7 +164,7 @@ describe("config", () => {
   it("detects scan dirs from filesystem when none configured", async () => {
     mkdirSync(resolve(ws.root, "web"));
     mkdirSync(resolve(ws.root, "src"));
-    ws.writeConfig({ packages: [{ targetPackage: "a" }] });
+    ws.writeConfig({ packages: [{ target: "a" }] });
     const { config } = await loadConfig(ws.root);
     expect(config.scanDirs).toContain("web");
     expect(config.scanDirs).toContain("src");

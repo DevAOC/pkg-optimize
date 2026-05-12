@@ -41,11 +41,10 @@ export async function resolvePackageConfig(
   const explicitPreset = pkgConfig.extends
     ? loadPreset(pkgConfig.extends)
     : null;
-  const autoPreset = explicitPreset ?? matchPreset(pkgConfig.targetPackage);
-  const detected = await detectPackageConfig(
-    pkgConfig.targetPackage,
-    projectRoot
-  );
+  const autoPreset = explicitPreset ?? matchPreset(pkgConfig.target);
+  const detected = await detectPackageConfig(pkgConfig.target, projectRoot, {
+    entry: pkgConfig.entry,
+  });
 
   const patterns = deepMerge(
     BUILT_IN_DEFAULTS.patterns,
@@ -78,7 +77,7 @@ export async function resolvePackageConfig(
     scanDirs,
     cache,
     watch,
-    _detected: detected,
+    detected,
   };
 }
 

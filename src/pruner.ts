@@ -21,7 +21,7 @@ export async function prune(args: PruneArgs): Promise<PruneResult> {
 
   dbg.prune(
     "[%s] start layout=%s soft=%s wildcard=%s members=%d operations=%d files=%d",
-    config.targetPackage,
+    config.target,
     layout,
     String(!!args.soft),
     String(!!usageMap.wildcard),
@@ -31,7 +31,7 @@ export async function prune(args: PruneArgs): Promise<PruneResult> {
   );
 
   const result: PruneResult = {
-    packageName: config.targetPackage,
+    packageName: config.target,
     removed: [],
     restored: [],
     kept: [],
@@ -39,13 +39,13 @@ export async function prune(args: PruneArgs): Promise<PruneResult> {
   };
 
   if (!(await pathExists(sourceDir, signal))) {
-    dbg.prune("[%s] skip: no cache at %s", config.targetPackage, sourceDir);
+    dbg.prune("[%s] skip: no cache at %s", config.target, sourceDir);
     result.warnings.push(
-      `No cache found at ${sourceDir}. Skipping prune for ${config.targetPackage}.`
+      `No cache found at ${sourceDir}. Skipping prune for ${config.target}.`
     );
     dbg.prune(
       "[%s] done (aborted: no cache) warnings=%d",
-      config.targetPackage,
+      config.target,
       result.warnings.length
     );
     return result;
@@ -57,15 +57,15 @@ export async function prune(args: PruneArgs): Promise<PruneResult> {
   if (usageMap.wildcard) {
     dbg.prune(
       "[%s] skip prune: dynamic import / unresolved path — restore-only",
-      config.targetPackage
+      config.target
     );
     await restoreAll(args, result);
     result.warnings.push(
-      `${config.targetPackage}: dynamic import detected with an unresolvable target — pruning skipped, all files kept/restored.`
+      `${config.target}: dynamic import detected with an unresolvable target — pruning skipped, all files kept/restored.`
     );
     dbg.prune(
       "[%s] done (restore-only) restored=%d kept=%d warnings=%d",
-      config.targetPackage,
+      config.target,
       result.restored.length,
       result.kept.length,
       result.warnings.length
@@ -77,7 +77,7 @@ export async function prune(args: PruneArgs): Promise<PruneResult> {
 
   dbg.prune(
     "[%s] done removed=%d restored=%d kept=%d warnings=%d",
-    config.targetPackage,
+    config.target,
     result.removed.length,
     result.restored.length,
     result.kept.length,

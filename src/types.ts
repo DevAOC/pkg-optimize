@@ -6,14 +6,20 @@ export interface ShakerConfig {
 }
 
 export interface PackageConfig {
-  targetPackage: string;
+  /** npm package name as used in imports (e.g. `@gadget-client/app`). */
+  target: string;
+  /**
+   * Optional filesystem root for that package, tried **first** before the
+   * default `node_modules/<target>` layout and closest-match search.
+   * Absolute path, or relative to the project root. Must contain a `package.json`
+   * whose `name` matches `target`.
+   */
+  entry?: string;
   extends?: string;
   scanDirs?: string[];
   allow?: { include?: string[] };
   patterns?: PatternsConfig;
   packageStructure?: StructureConfig;
-  /** Written back on first run by the detector. */
-  _detected?: DetectedConfig;
 }
 
 export interface PatternsConfig {
@@ -95,6 +101,11 @@ export interface DetectedConfig {
   packageStructure?: Partial<StructureConfig>;
   confidence: "high" | "medium" | "low";
   warnings?: string[];
+  /**
+   * When true, scan and prune must not run for this package (e.g. package entry
+   * could not be resolved after `entry`, install path, and search).
+   */
+  skip?: boolean;
 }
 
 export interface UsageMap {
@@ -133,6 +144,8 @@ export interface ResolvedPackageConfig extends PackageConfig {
   scanDirs: string[];
   cache: { dir: string };
   watch: { debounceMs: number; softPruneInDev: boolean };
+  /** Latest auto-detection result; persisted to `<cache.dir>/_detected.json` for inspection. */
+  detected: DetectedConfig;
 }
 
 export type RunMode = "run" | "watch";

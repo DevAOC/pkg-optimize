@@ -41,7 +41,7 @@ export interface ScanOptions {
    * statements. Used to attribute imports to the target package and to detect
    * deep-import file references.
    */
-  targetPackage?: string;
+  target?: string;
   /** When aborted, directory walks and file reads stop cooperatively. */
   signal?: AbortSignal;
 }
@@ -98,7 +98,7 @@ export async function scanDirs(
 
   dbg.scan(
     "target=%s files=%d members=%d operations=%d deepImports=%d wildcard=%s walk: ignoredDirs=%d hiddenDirs=%d nonSourceExt=%d missingRoots=%d",
-    options.targetPackage ?? "(none)",
+    options.target ?? "(none)",
     stats.sourceFiles,
     usageMap.members.size,
     usageMap.operations.size,
@@ -149,12 +149,12 @@ export async function scanFile(
   const dynamicNamespaces = new Set<string>();
   if (patterns.namespace) dynamicNamespaces.add(patterns.namespace);
 
-  if (options.targetPackage) {
+  if (options.target) {
     traverse(ast, {
       ImportDeclaration(path: NodePath<ImportDeclaration>) {
         handleImport(
           path.node,
-          options.targetPackage!,
+          options.target!,
           usageMap,
           dynamicNamespaces
         );
@@ -203,8 +203,8 @@ export async function scanFile(
     CallExpression(path: NodePath<CallExpression>) {
       const node = path.node;
 
-      if (options.targetPackage) {
-        handleDynamicReference(node, options.targetPackage, usageMap);
+      if (options.target) {
+        handleDynamicReference(node, options.target, usageMap);
       }
 
       const { callee, arguments: args } = node;
@@ -232,14 +232,14 @@ export async function scanFile(
  */
 function handleDynamicReference(
   node: CallExpression,
-  targetPackage: string,
+  target: string,
   usageMap: UsageMap
 ): void {
   const arg = getDynamicReferenceArg(node);
   if (!arg) return;
 
   if (arg.type === "StringLiteral") {
-    const subpath = matchPackageSubpath(arg.value, targetPackage);
+    const subpath = matchPackageSubpath(arg.value, target);
     if (subpath === null) return; // not our package
     if (subpath === "") {
       // `import('pkg')` with no subpath — the call returns the whole namespace
@@ -258,12 +258,12 @@ function handleDynamicReference(
     const prefix = firstQuasi.value.cooked ?? firstQuasi.value.raw ?? "";
     const trimmed = prefix.replace(/\/+$/, "");
 
-    if (trimmed === targetPackage) {
+    if (trimmed === target) {
       // `import(\`pkg/${x}\`)` — could be any subpath of the target.
       usageMap.wildcard = true;
       return;
     }
-    const subpath = matchPackageSubpath(trimmed, targetPackage);
+    const subpath = matchPackageSubpath(trimmed, target);
     if (subpath === null) return; // prefix doesn't reach our package, ignore
     // `import(\`pkg/sub/${x}\`)` — record `sub` so the whole `sub/` tree is kept.
     usageMap.files.add(stripFilenameExt(subpath));
@@ -311,12 +311,12 @@ function getDynamicReferenceArg(node: CallExpression): Node | null {
 
 function handleImport(
   node: ImportDeclaration,
-  targetPackage: string,
+  target: string,
   usageMap: UsageMap,
   dynamicNamespaces: Set<string>
 ): void {
   const source = node.source.value;
-  const subpath = matchPackageSubpath(source, targetPackage);
+  const subpath = matchPackageSubpath(source, target);
   if (subpath === null) return;
 
   const isDeepImport = subpath.length > 0;
@@ -362,10 +362,10 @@ function handleImport(
  */
 function matchPackageSubpath(
   source: string,
-  targetPackage: string
+  target: string
 ): string | null {
-  if (source === targetPackage) return "";
-  const prefix = targetPackage + "/";
+  if (source === target) return "";
+  const prefix = target + "/";
   if (source.startsWith(prefix)) return source.slice(prefix.length);
   return null;
 }

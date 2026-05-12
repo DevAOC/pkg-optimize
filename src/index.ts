@@ -1,15 +1,19 @@
-import { ShakerCache } from "./cache";
-import { runCli } from "./cli";
-import {
+/**
+ * Public API — direct exports from implementation modules (no import/re-export indirection).
+ */
+
+export { ShakerCache } from "./cache";
+export { runCli } from "./cli";
+export {
   applyTopLevelDefaults,
   CONFIG_FILENAME,
   detectScanDirs,
   findConfig,
   loadConfig,
-  validate,
+  validate as validateConfig,
   writeConfig,
 } from "./config";
-import {
+export {
   detectExtensions,
   detectLayout,
   detectMemberDir,
@@ -17,12 +21,13 @@ import {
   detectPackageConfig,
   scoreConfidence,
 } from "./detector";
-import {
+export type { DetectPackageOptions } from "./detector";
+export {
   isPreserved,
   stripExtension,
   symbolToFilename,
 } from "./layouts/shared";
-import {
+export {
   configureLogging,
   dbg,
   emitResult,
@@ -30,18 +35,18 @@ import {
   logVerboseRunSummary,
   primeErrorDebug,
 } from "./logger";
-import { listPresetNames, loadPreset, matchPreset } from "./presets/index";
-import { prune } from "./pruner";
-import { deepMerge, resolvePackageConfig } from "./resolver";
-import {
+export { listPresetNames, loadPreset, matchPreset } from "./presets/index";
+export { prune } from "./pruner";
+export { deepMerge, resolvePackageConfig } from "./resolver";
+export {
   scanDirs,
   scanFile,
   type ScanOptions,
   type ScanWalkStats,
 } from "./scanner";
-import { startWatcher } from "./watcher";
-import { isAbortError, toCamelCase } from "./utils";
-import type {
+export { startWatcher } from "./watcher";
+export { isAbortError, toCamelCase } from "./utils";
+export type {
   DetectedConfig,
   HookPattern,
   PackageConfig,
@@ -53,56 +58,3 @@ import type {
   StructureConfig,
   UsageMap,
 } from "./types";
-
-export {
-  CONFIG_FILENAME,
-  applyTopLevelDefaults,
-  detectScanDirs,
-  findConfig,
-  loadConfig,
-  validate as validateConfig,
-  writeConfig,
-  detectExtensions,
-  detectLayout,
-  detectMemberDir,
-  detectNaming,
-  detectPackageConfig,
-  scoreConfidence,
-  scanDirs,
-  scanFile,
-  prune,
-  isPreserved,
-  stripExtension,
-  symbolToFilename,
-  ShakerCache,
-  resolvePackageConfig,
-  deepMerge,
-  startWatcher,
-  loadPreset,
-  matchPreset,
-  listPresetNames,
-  configureLogging,
-  dbg,
-  emitResult,
-  formatResultLine,
-  logVerboseRunSummary,
-  primeErrorDebug,
-  runCli,
-  isAbortError,
-  toCamelCase,
-};
-
-export type {
-  DetectedConfig,
-  HookPattern,
-  PackageConfig,
-  PatternsConfig,
-  PruneResult,
-  ResolvedPackageConfig,
-  RunMode,
-  ScanOptions,
-  ScanWalkStats,
-  ShakerConfig,
-  StructureConfig,
-  UsageMap,
-};

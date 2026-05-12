@@ -6,7 +6,7 @@ import { isAbortError, pathExists, withSignal } from "./utils";
 export class ShakerCache {
   private readonly packageDir: string;
   private readonly cachedPackageDir: string;
-  private readonly targetPackage: string;
+  private readonly target: string;
   /**
    * Serialize mutating operations (`prime` / `reprime`). The sync `*Sync` APIs
    * the watcher used to call were naturally serialized by Node's single
@@ -17,12 +17,12 @@ export class ShakerCache {
 
   constructor(
     cacheBaseDir: string,
-    targetPackage: string,
+    target: string,
     projectRoot: string
   ) {
-    this.targetPackage = targetPackage;
-    this.packageDir = resolve(projectRoot, "node_modules", targetPackage);
-    this.cachedPackageDir = resolve(projectRoot, cacheBaseDir, targetPackage);
+    this.target = target;
+    this.packageDir = resolve(projectRoot, "node_modules", target);
+    this.cachedPackageDir = resolve(projectRoot, cacheBaseDir, target);
   }
 
   isCached(): Promise<boolean> {
@@ -45,7 +45,7 @@ export class ShakerCache {
       }
       dbg.cache(
         "[%s] prime: copy %s → cache %s",
-        this.targetPackage,
+        this.target,
         this.packageDir,
         this.cachedPackageDir
       );
@@ -62,7 +62,7 @@ export class ShakerCache {
           dereference: true,
         })
       );
-      dbg.cache("[%s] prime: done", this.targetPackage);
+      dbg.cache("[%s] prime: done", this.target);
     });
   }
 
@@ -84,7 +84,7 @@ export class ShakerCache {
       if (!(await pathExists(this.packageDir, signal))) {
         dbg.cache(
           "[%s] reprime: skip (live package missing)",
-          this.targetPackage
+          this.target
         );
         return false;
       }
@@ -113,7 +113,7 @@ export class ShakerCache {
         if (liveMtime <= cacheMtime) {
           dbg.cache(
             "[%s] reprime: skip (package.json mtime unchanged)",
-            this.targetPackage
+            this.target
           );
           return false;
         }
@@ -121,7 +121,7 @@ export class ShakerCache {
 
       dbg.cache(
         "[%s] reprime: refresh cache (force=%s)",
-        this.targetPackage,
+        this.target,
         String(!!opts?.force)
       );
       await withSignal(signal, () =>
@@ -137,7 +137,7 @@ export class ShakerCache {
           dereference: true,
         })
       );
-      dbg.cache("[%s] reprime: done", this.targetPackage);
+      dbg.cache("[%s] reprime: done", this.target);
       return true;
     });
   }

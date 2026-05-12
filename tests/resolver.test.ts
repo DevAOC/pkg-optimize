@@ -16,7 +16,7 @@ describe("resolver", () => {
       scanDirs: ["web"],
       packages: [
         {
-          targetPackage: "@gadget-client/test-app",
+          target: "@gadget-client/test-app",
           patterns: {
             namespace: "customApi",
             accessStyle: "member",
@@ -34,7 +34,7 @@ describe("resolver", () => {
     ws.installFixturePackage("gadget-flat", "@gadget-client/flat-app");
     const top: ShakerConfig = {
       scanDirs: ["web"],
-      packages: [{ targetPackage: "@gadget-client/flat-app" }],
+      packages: [{ target: "@gadget-client/flat-app" }],
     };
 
     const resolved = await resolvePackageConfig(top.packages[0]!, top, ws.root);
@@ -46,7 +46,7 @@ describe("resolver", () => {
     // Without explicit detection (package not installed), preset should apply.
     const top: ShakerConfig = {
       scanDirs: ["web"],
-      packages: [{ targetPackage: "@gadget-client/missing" }],
+      packages: [{ target: "@gadget-client/missing" }],
     };
 
     const resolved = await resolvePackageConfig(top.packages[0]!, top, ws.root);
@@ -62,7 +62,7 @@ describe("resolver", () => {
       scanDirs: ["web"],
       packages: [
         {
-          targetPackage: "@gadget-client/test-app",
+          target: "@gadget-client/test-app",
           scanDirs: ["extensions"],
         },
       ],
@@ -76,7 +76,7 @@ describe("resolver", () => {
     ws.installFixturePackage("gadget-nested", "@gadget-client/test-app");
     const top: ShakerConfig = {
       scanDirs: ["web"],
-      packages: [{ targetPackage: "@gadget-client/test-app" }],
+      packages: [{ target: "@gadget-client/test-app" }],
     };
 
     const resolved = await resolvePackageConfig(top.packages[0]!, top, ws.root);

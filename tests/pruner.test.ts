@@ -11,6 +11,7 @@ import { ShakerCache } from "../src/cache";
 import { prune } from "../src/pruner";
 import { toCamelCase } from "../src/utils";
 import type {
+  DetectedConfig,
   ResolvedPackageConfig,
   StructureConfig,
   UsageMap,
@@ -47,13 +48,15 @@ const KEBAB_FLAT_STRUCTURE: StructureConfig = {
   preserve: ["index.js", "package.json"],
 };
 
+const TEST_DETECTED: DetectedConfig = { confidence: "high" };
+
 function buildResolved(
-  targetPackage: string,
+  target: string,
   structure: StructureConfig,
   allow?: { include?: string[] }
 ): ResolvedPackageConfig {
   return {
-    targetPackage,
+    target,
     allow,
     patterns: {
       namespace: "api",
@@ -65,6 +68,7 @@ function buildResolved(
     scanDirs: ["web"],
     cache: { dir: ".pkg-optimize-cache" },
     watch: { debounceMs: 300, softPruneInDev: true },
+    detected: TEST_DETECTED,
   };
 }
 

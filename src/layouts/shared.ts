@@ -89,7 +89,7 @@ export async function restoreAll(
   const { sourceDir, targetDir, signal, config } = args;
   dbg.prune(
     "[%s] bulk restore from cache → live (wildcard / restore-only)",
-    config.targetPackage
+    config.target
   );
   await walkFiles(
     sourceDir,
@@ -109,7 +109,7 @@ export async function restoreAll(
   );
   dbg.prune(
     "[%s] bulk restore finished restored=%d kept=%d",
-    config.targetPackage,
+    config.target,
     result.restored.length,
     result.kept.length
   );

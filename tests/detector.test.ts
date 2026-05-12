@@ -154,6 +154,20 @@ describe("detector", () => {
     expect(["high", "medium", "low"]).toContain(detected.confidence);
   });
 
+  it("infers nested layout and dist/models when exports point at dist/ only", async () => {
+    ws.installFixturePackage(
+      "gadget-dist-entry",
+      "@example/gadget-dist-layout",
+    );
+    const detected = await detectPackageConfig(
+      "@example/gadget-dist-layout",
+      ws.root,
+    );
+    expect(detected.packageStructure?.layout).toBe("nested");
+    expect(detected.packageStructure?.memberDir).toBe("dist/models");
+    expect(detected.patterns?.namespace).toBe("api");
+  });
+
   it("infers nested layout from preset when the package is symlink-hoisted", async () => {
     ws.installFixturePackageSymlinked(
       "gadget-nested",
@@ -196,6 +210,22 @@ describe("detector", () => {
       ws.root,
     );
     expect(detected.packageStructure?.layout).toBe("barrel");
+  });
+
+  it("sets skip when package entry cannot be resolved after discovery", async () => {
+    const pkgDir = resolve(ws.root, "node_modules", "unresolvable-entry");
+    mkdirSync(pkgDir, { recursive: true });
+    writeFileSync(
+      resolve(pkgDir, "package.json"),
+      JSON.stringify({
+        name: "unresolvable-entry",
+        main: "this-file-does-not-exist.js",
+      }),
+    );
+    const detected = await detectPackageConfig("unresolvable-entry", ws.root);
+    expect(detected.skip).toBe(true);
+    expect(detected.confidence).toBe("low");
+    expect(detected.warnings?.some((w) => /skipping/i.test(w))).toBe(true);
   });
 
   it("returns low confidence and warnings when package is not installed", async () => {

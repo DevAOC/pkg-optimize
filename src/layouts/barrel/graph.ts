@@ -2,14 +2,9 @@ import { parse } from "@babel/parser";
 import type { ParserOptions } from "@babel/parser";
 import type { File, StringLiteral } from "@babel/types";
 import { readFile } from "node:fs/promises";
-import {
-  dirname,
-  extname,
-  join,
-  relative,
-  resolve as resolvePath,
-} from "node:path";
-import { pathExists, toCamelCase } from "../../utils";
+import { dirname, relative, resolve as resolvePath } from "node:path";
+import { resolveExistingModule, resolvePackageEntryAbs } from "../../detector";
+import { toCamelCase } from "../../utils";
 import type { BarrelAnalyzeResult } from "./types";
 
 const PARSE_OPTS: ParserOptions = {
@@ -30,46 +25,6 @@ const RESOLVE_EXTS = [
 ] as const;
 
 /**
- * Resolve the primary package entry file (absolute path), or null.
- */
-export async function resolvePackageEntryAbs(
-  packageRoot: string,
-  pkgJson: Record<string, unknown>
-): Promise<string | null> {
-  const subpath = resolvePackageEntrySubpath(pkgJson);
-  if (!subpath) return null;
-  const abs = resolvePath(packageRoot, subpath);
-  return (await resolveExistingModule(abs)) ?? null;
-}
-
-function resolvePackageEntrySubpath(
-  pkgJson: Record<string, unknown>
-): string | null {
-  const exports = pkgJson.exports;
-  if (exports && typeof exports === "object" && !Array.isArray(exports)) {
-    const dot = (exports as Record<string, unknown>)["."];
-    if (typeof dot === "string") return normalizeEntrySubpath(dot);
-    if (dot && typeof dot === "object" && !Array.isArray(dot)) {
-      const o = dot as Record<string, unknown>;
-      const cand =
-        (typeof o.import === "string" && o.import) ||
-        (typeof o.default === "string" && o.default) ||
-        (typeof o.require === "string" && o.require);
-      if (cand) return normalizeEntrySubpath(cand);
-    }
-  }
-  const module = pkgJson.module;
-  if (typeof module === "string") return normalizeEntrySubpath(module);
-  const main = pkgJson.main;
-  if (typeof main === "string") return normalizeEntrySubpath(main);
-  return "index.js";
-}
-
-function normalizeEntrySubpath(s: string): string {
-  return s.replace(/^\.\//, "");
-}
-
-/**
  * Build the set of files to keep and barrel files to rewrite for a multi-file
  * re-export package. Single-file packages yield keep = { entry } only.
  */
@@ -80,7 +35,7 @@ export async function analyzeBarrelPackage(
   allowedCamelMembers: Set<string>,
   /** Normalized file refs (subpaths after package name) from deep imports */
   allowedFileRefs: Set<string>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<BarrelAnalyzeResult> {
   signal?.throwIfAborted();
   const entryAbs = await resolvePackageEntryAbs(packageRoot, pkgJson);
@@ -128,7 +83,7 @@ export async function analyzeBarrelPackage(
     entryAbs,
     new Map(),
     new Set(),
-    signal
+    signal,
   );
   if (!surface.ok) return surface;
 
@@ -149,7 +104,7 @@ export async function analyzeBarrelPackage(
       entryAbs,
       name,
       new Set(),
-      signal
+      signal,
     );
     if (!traced.ok) return traced;
     for (const p of traced.implRelPaths) keepRelPaths.add(p);
@@ -175,30 +130,10 @@ function toPosixRel(root: string, abs: string): string {
     .join("/");
 }
 
-async function resolveExistingModule(
-  absWithoutMandatoryExt: string
-): Promise<string | null> {
-  if (await pathExists(absWithoutMandatoryExt)) {
-    return absWithoutMandatoryExt;
-  }
-  const ext = extname(absWithoutMandatoryExt);
-  if (!ext) {
-    for (const e of RESOLVE_EXTS) {
-      const withE = absWithoutMandatoryExt + e;
-      if (await pathExists(withE)) return withE;
-    }
-    for (const e of RESOLVE_EXTS) {
-      const idx = join(absWithoutMandatoryExt, "index" + e);
-      if (await pathExists(idx)) return idx;
-    }
-  }
-  return null;
-}
-
 async function resolveRelativeModule(
   packageRoot: string,
   fromFileAbs: string,
-  specifier: string
+  specifier: string,
 ): Promise<string | null> {
   if (!specifier.startsWith(".") && !specifier.startsWith("/")) {
     return null;
@@ -216,7 +151,7 @@ async function collectExportSurface(
   moduleAbs: string,
   memo: Map<string, Set<string>>,
   inProgress: Set<string>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<SurfaceResult> {
   signal?.throwIfAborted();
   const rel = toPosixRel(packageRoot, moduleAbs);
@@ -266,7 +201,7 @@ async function collectExportSurface(
         resolved,
         memo,
         inProgress,
-        signal
+        signal,
       );
       if (!inner.ok) {
         inProgress.delete(rel);
@@ -329,7 +264,7 @@ async function traceExport(
   moduleAbs: string,
   exportName: string,
   stack: Set<string>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<TraceResult> {
   signal?.throwIfAborted();
   const rel = toPosixRel(packageRoot, moduleAbs);
@@ -390,7 +325,7 @@ async function traceExport(
           resolved,
           local,
           stack,
-          signal
+          signal,
         );
         if (!inner.ok) {
           stack.delete(key);
@@ -414,7 +349,7 @@ async function traceExport(
         resolved,
         exportName,
         stack,
-        signal
+        signal,
       );
       if (
         inner.ok &&
@@ -521,7 +456,7 @@ function classifyFromAst(ast: File): { hasLocalExport(name: string): boolean } {
 
 async function classifyModuleAt(
   abs: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<"barrel" | "mixed"> {
   signal?.throwIfAborted();
   let source: string;
@@ -573,7 +508,7 @@ export async function rewriteBarrelSource(
     packageRoot: string;
     fileAbs: string;
     keepRelPaths: Set<string>;
-  }
+  },
 ): Promise<{ ok: true; code: string } | { ok: false }> {
   let ast: File;
   try {
@@ -597,7 +532,7 @@ export async function rewriteBarrelSource(
       const resolved = await resolveRelativeModule(
         opts.packageRoot,
         opts.fileAbs,
-        src
+        src,
       );
       if (!resolved) continue;
       const rel = toPosixRel(opts.packageRoot, resolved);
@@ -649,7 +584,7 @@ export async function rewriteBarrelSource(
 
 function keepSetCoversModulePath(
   moduleRel: string,
-  keep: Set<string>
+  keep: Set<string>,
 ): boolean {
   const norm = moduleRel.replace(/\/+$/, "");
   if (keep.has(norm)) return true;

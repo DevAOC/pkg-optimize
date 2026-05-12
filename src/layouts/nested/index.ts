@@ -38,11 +38,11 @@ export async function pruneNested(
   if (!(await pathExists(cachedMembersDir, signal))) {
     dbg.prune(
       "[%s] skip nested walk: cached member dir missing: %s",
-      config.targetPackage,
+      config.target,
       memberDirName
     );
     result.warnings.push(
-      `Cached member dir ${memberDirName} not found in cache for ${config.targetPackage}.`
+      `Cached member dir ${memberDirName} not found in cache for ${config.target}.`
     );
     return;
   }
@@ -85,7 +85,7 @@ export async function pruneNested(
       if (!memberAllowed) {
         dbg.prune(
           "[%s] remove member tree (not referenced): %s/%s",
-          config.targetPackage,
+          config.target,
           memberDirName,
           entry
         );
@@ -155,7 +155,7 @@ export async function pruneNested(
           } else {
             dbg.prune(
               "[%s] remove operation file (not referenced): %s",
-              config.targetPackage,
+              config.target,
               fullRel
             );
             await removeIfPresent(liveFilePath, soft, result, fullRel, signal);

@@ -20,15 +20,15 @@ const SOURCE_FIXTURES = resolve(FIXTURES_DIR, "source");
 
 export interface Workspace {
   root: string;
-  /** Copy a fake package fixture into the workspace's node_modules under `targetPackage`. */
-  installFixturePackage(fixtureName: string, targetPackage: string): string;
+  /** Copy a fake package fixture into the workspace's node_modules under `target`. */
+  installFixturePackage(fixtureName: string, target: string): string;
   /**
    * Like `installFixturePackage`, but the live path under `node_modules` is a
    * symlink to a real directory (simulates pnpm / some hoisted layouts).
    */
   installFixturePackageSymlinked(
     fixtureName: string,
-    targetPackage: string
+    target: string
   ): string;
   /** Copy the test source fixtures into the workspace. */
   installFixtureSource(opts?: { dirs?: string[] }): void;
@@ -42,17 +42,17 @@ export function createWorkspace(): Workspace {
 
   return {
     root,
-    installFixturePackage(fixtureName, targetPackage) {
+    installFixturePackage(fixtureName, target) {
       const src = resolve(PACKAGE_FIXTURES, fixtureName);
-      const dest = resolve(root, "node_modules", targetPackage);
+      const dest = resolve(root, "node_modules", target);
       mkdirSync(resolve(root, "node_modules"), { recursive: true });
       cpSync(src, dest, { recursive: true });
       return dest;
     },
-    installFixturePackageSymlinked(fixtureName, targetPackage) {
+    installFixturePackageSymlinked(fixtureName, target) {
       const src = resolve(PACKAGE_FIXTURES, fixtureName);
-      const linkPath = resolve(root, "node_modules", targetPackage);
-      const realDest = resolve(root, ".fixture-store", targetPackage);
+      const linkPath = resolve(root, "node_modules", target);
+      const realDest = resolve(root, ".fixture-store", target);
       mkdirSync(dirname(realDest), { recursive: true });
       cpSync(src, realDest, { recursive: true });
       mkdirSync(dirname(linkPath), { recursive: true });

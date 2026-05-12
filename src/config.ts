@@ -56,7 +56,9 @@ const packageStructureSchema = z
 
 const packageEntrySchema = z
   .object({
-    targetPackage: z.string().min(1),
+    target: z.string().min(1).optional(),
+    targetPackage: z.string().min(1).optional(),
+    entry: z.string().optional(),
     extends: z.string().optional(),
     scanDirs: z.array(z.string()).optional(),
     allow: z
@@ -67,9 +69,22 @@ const packageEntrySchema = z
       .optional(),
     patterns: patternsSchema.optional(),
     packageStructure: packageStructureSchema.optional(),
-    _detected: z.record(z.string(), z.unknown()).optional(),
   })
-  .passthrough();
+  .passthrough()
+  .superRefine((data, ctx) => {
+    if (!data.target && !data.targetPackage) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide target (or legacy targetPackage) for each package entry",
+        path: ["target"],
+      });
+    }
+  })
+  .transform((data) => {
+    const { targetPackage, ...rest } = data;
+    const target = rest.target ?? targetPackage;
+    return { ...rest, target: target! };
+  });
 
 const shakerConfigSchema = z
   .object({
@@ -111,8 +126,7 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<{
     throw new Error(`Failed to parse ${configPath}: ${(err as Error).message}`);
   }
 
-  validate(raw);
-  const config = raw as ShakerConfig;
+  const config = validate(raw);
 
   return {
     config: await applyTopLevelDefaults(config, dirname(configPath)),
@@ -180,12 +194,13 @@ export async function detectScanDirs(cwd: string): Promise<string[]> {
   }, []);
 }
 
-export function validate(raw: unknown): void {
+export function validate(raw: unknown): ShakerConfig {
   const result = shakerConfigSchema.safeParse(raw);
   if (!result.success) {
     const detail = formatZodIssues(result.error);
     throw new Error(`Invalid pkg-optimize.config.json: ${detail}`);
   }
+  return result.data as ShakerConfig;
 }
 
 function formatZodIssues(err: z.ZodError): string {

@@ -5,6 +5,7 @@ import { ShakerCache } from "../../src/cache";
 import { prune } from "../../src/pruner";
 import { scanFile } from "../../src/scanner";
 import type {
+  DetectedConfig,
   PatternsConfig,
   ResolvedPackageConfig,
   StructureConfig,
@@ -30,14 +31,17 @@ function emptyUsage(): UsageMap {
   return { members: new Set(), operations: new Set(), files: new Set() };
 }
 
-function buildResolved(targetPackage: string): ResolvedPackageConfig {
+const TEST_DETECTED: DetectedConfig = { confidence: "high" };
+
+function buildResolved(target: string): ResolvedPackageConfig {
   return {
-    targetPackage,
+    target,
     patterns: PATTERNS,
     packageStructure: STRUCTURE,
     scanDirs: ["src"],
     cache: { dir: ".pkg-optimize-cache" },
     watch: { debounceMs: 300, softPruneInDev: true },
+    detected: TEST_DETECTED,
   };
 }
 
@@ -52,7 +56,7 @@ describe("scanner — dynamic imports (string literal)", () => {
     const f = resolve(ws.root, "a.ts");
     writeFileSync(f, `const m = await import('lodash-es/debounce');`);
     const usage = emptyUsage();
-    await scanFile(f, PATTERNS, usage, { targetPackage: "lodash-es" });
+    await scanFile(f, PATTERNS, usage, { target: "lodash-es" });
     expect(usage.files.has("debounce")).toBe(true);
     expect(usage.wildcard).not.toBe(true);
   });
@@ -61,7 +65,7 @@ describe("scanner — dynamic imports (string literal)", () => {
     const f = resolve(ws.root, "a.cjs");
     writeFileSync(f, `const debounce = require('lodash-es/debounce');`);
     const usage = emptyUsage();
-    await scanFile(f, PATTERNS, usage, { targetPackage: "lodash-es" });
+    await scanFile(f, PATTERNS, usage, { target: "lodash-es" });
     expect(usage.files.has("debounce")).toBe(true);
   });
 
@@ -69,7 +73,7 @@ describe("scanner — dynamic imports (string literal)", () => {
     const f = resolve(ws.root, "a.cjs");
     writeFileSync(f, `const path = require.resolve('lodash-es/throttle');`);
     const usage = emptyUsage();
-    await scanFile(f, PATTERNS, usage, { targetPackage: "lodash-es" });
+    await scanFile(f, PATTERNS, usage, { target: "lodash-es" });
     expect(usage.files.has("throttle")).toBe(true);
   });
 
@@ -77,7 +81,7 @@ describe("scanner — dynamic imports (string literal)", () => {
     const f = resolve(ws.root, "a.ts");
     writeFileSync(f, `await import('pkg/sub/file.mjs');`);
     const usage = emptyUsage();
-    await scanFile(f, PATTERNS, usage, { targetPackage: "pkg" });
+    await scanFile(f, PATTERNS, usage, { target: "pkg" });
     expect(usage.files.has("sub/file")).toBe(true);
   });
 
@@ -85,7 +89,7 @@ describe("scanner — dynamic imports (string literal)", () => {
     const f = resolve(ws.root, "a.ts");
     writeFileSync(f, `const _ = await import('lodash-es');`);
     const usage = emptyUsage();
-    await scanFile(f, PATTERNS, usage, { targetPackage: "lodash-es" });
+    await scanFile(f, PATTERNS, usage, { target: "lodash-es" });
     expect(usage.wildcard).toBe(true);
   });
 
@@ -93,7 +97,7 @@ describe("scanner — dynamic imports (string literal)", () => {
     const f = resolve(ws.root, "a.cjs");
     writeFileSync(f, `const _ = require('lodash-es');`);
     const usage = emptyUsage();
-    await scanFile(f, PATTERNS, usage, { targetPackage: "lodash-es" });
+    await scanFile(f, PATTERNS, usage, { target: "lodash-es" });
     expect(usage.wildcard).toBe(true);
   });
 
@@ -106,7 +110,7 @@ describe("scanner — dynamic imports (string literal)", () => {
        await import('other-pkg/foo');`
     );
     const usage = emptyUsage();
-    await scanFile(f, PATTERNS, usage, { targetPackage: "lodash-es" });
+    await scanFile(f, PATTERNS, usage, { target: "lodash-es" });
     expect(usage.wildcard).not.toBe(true);
     expect(usage.files.size).toBe(0);
   });
@@ -126,7 +130,7 @@ describe("scanner — dynamic imports (template literal)", () => {
       'const name = "FaUser"; const M = await import(`react-icons/fa/${name}`);'
     );
     const usage = emptyUsage();
-    await scanFile(f, PATTERNS, usage, { targetPackage: "react-icons" });
+    await scanFile(f, PATTERNS, usage, { target: "react-icons" });
     expect(usage.files.has("fa")).toBe(true);
     // Recording the prefix as a file ref keeps the whole `fa/` dir alive
     // (because pathMatchesFiles matches descendants).
@@ -140,7 +144,7 @@ describe("scanner — dynamic imports (template literal)", () => {
       'const sub = "debounce"; await import(`lodash-es/${sub}`);'
     );
     const usage = emptyUsage();
-    await scanFile(f, PATTERNS, usage, { targetPackage: "lodash-es" });
+    await scanFile(f, PATTERNS, usage, { target: "lodash-es" });
     expect(usage.wildcard).toBe(true);
   });
 
@@ -151,7 +155,7 @@ describe("scanner — dynamic imports (template literal)", () => {
       'const x = "y"; await import(`./locale/${x}/index.js`); await import(`other-pkg/${x}`);'
     );
     const usage = emptyUsage();
-    await scanFile(f, PATTERNS, usage, { targetPackage: "lodash-es" });
+    await scanFile(f, PATTERNS, usage, { target: "lodash-es" });
     expect(usage.wildcard).not.toBe(true);
     expect(usage.files.size).toBe(0);
   });
@@ -176,7 +180,7 @@ describe("scanner — dynamic imports (fully variable arg)", () => {
        require(path);`
     );
     const usage = emptyUsage();
-    await scanFile(f, PATTERNS, usage, { targetPackage: "lodash-es" });
+    await scanFile(f, PATTERNS, usage, { target: "lodash-es" });
     expect(usage.wildcard).not.toBe(true);
     expect(usage.files.size).toBe(0);
   });
