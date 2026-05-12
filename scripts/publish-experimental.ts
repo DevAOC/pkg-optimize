@@ -5,8 +5,21 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import type { StdioOptions } from "node:child_process";
 
+const NPM_REGISTRY = "https://registry.npmjs.org";
+
 const workspacePath = (...parts) =>
   resolve(import.meta.dirname, "..", ...parts);
+
+/** Yarn (and other runners) set `npm_config_*` env vars npm does not recognize, which triggers npm 10+ warnings. */
+function envForNpm(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase().startsWith("npm_config_")) {
+      delete env[key];
+    }
+  }
+  return env;
+}
 
 interface RunOptions {
   capture?: boolean;
@@ -49,7 +62,14 @@ Please commit or stash them before publishing
     console.log(`\nPublishing experimental release: ${packageJson.version}`);
     await run(
       "npm",
-      ["publish", "--tag", "experimental", "--provenance=false"],
+      [
+        "publish",
+        "--registry",
+        NPM_REGISTRY,
+        "--tag",
+        "experimental",
+        "--provenance=false",
+      ],
       { stdio: "inherit" },
     );
   } finally {
@@ -59,14 +79,14 @@ Please commit or stash them before publishing
 
 async function assertNpmAuth() {
   try {
-    await run("npm", ["whoami", "--registry", "https://registry.npmjs.org"], {
+    await run("npm", ["whoami", "--registry", NPM_REGISTRY], {
       capture: true,
     });
   } catch {
     throw new Error(`
-You are not logged in to npm
+You are not logged in to the public npm registry (${NPM_REGISTRY})
 
-Run \`npm login\` or \`npm adduser\`, then retry \`npm run release:experimental\`.
+Run \`npm login --registry ${NPM_REGISTRY}\` (or \`npm adduser --registry ${NPM_REGISTRY}\`), then retry.
 `);
   }
 }
@@ -86,6 +106,7 @@ function run(
     let stderr = "";
     const child = spawn(command, args, {
       cwd: workspacePath(),
+      env: command === "npm" ? envForNpm() : process.env,
       stdio: options.capture ? ["ignore", "pipe", "pipe"] : options.stdio,
     });
 
