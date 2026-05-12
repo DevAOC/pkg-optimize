@@ -10,10 +10,10 @@ expect after you do.
 receives security fixes. Older `0.x` minors are not patched — upgrade to the
 latest `0.x` release.
 
-| Version       | Supported          |
-| ------------- | ------------------ |
-| Latest `0.x`  | :white_check_mark: |
-| Older `0.x`   | :x:                |
+| Version      | Supported          |
+| ------------ | ------------------ |
+| Latest `0.x` | :white_check_mark: |
+| Older `0.x`  | :x:                |
 
 This will change once `1.0.0` ships; the table will be updated to cover the
 current major + previous major at that point.

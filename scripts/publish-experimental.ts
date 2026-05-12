@@ -5,7 +5,8 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import type { StdioOptions } from "node:child_process";
 
-const workspacePath = (...parts) => resolve(import.meta.dirname, "..", ...parts);
+const workspacePath = (...parts) =>
+  resolve(import.meta.dirname, "..", ...parts);
 
 interface RunOptions {
   capture?: boolean;
@@ -40,7 +41,10 @@ Please commit or stash them before publishing
     const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
 
     packageJson.version = `0.0.0-experimental.${gitSha}`;
-    await writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+    await writeFile(
+      packageJsonPath,
+      `${JSON.stringify(packageJson, null, 2)}\n`,
+    );
 
     console.log(`\nPublishing experimental release: ${packageJson.version}`);
     await run(
@@ -101,7 +105,8 @@ function run(
 
       reject(
         new Error(
-          stderr.trim() || `${command} ${args.join(" ")} exited with code ${code}`,
+          stderr.trim() ||
+            `${command} ${args.join(" ")} exited with code ${code}`,
         ),
       );
     });

@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 const pkgVersion = JSON.parse(
   readFileSync(
     resolve(fileURLToPath(import.meta.url), "..", "package.json"),
-    "utf8",
-  ),
+    "utf8"
+  )
 ).version as string;
 
 const versionDefine = {
@@ -40,7 +40,7 @@ export default defineConfig([
           if (!name.endsWith(".json")) return acc;
           acc.push(copyFile(resolve(src, name), resolve(dest, name)));
           return acc;
-        }, []),
+        }, [])
       );
     },
   },

@@ -20,9 +20,9 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # push the "Version Packages" branch + create GitHub releases
-      pull-requests: write  # open/update the "Version Packages" PR
-      id-token: write       # npm provenance attestations
+      contents: write # push the "Version Packages" branch + create GitHub releases
+      pull-requests: write # open/update the "Version Packages" PR
+      id-token: write # npm provenance attestations
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -35,8 +35,8 @@ jobs:
         with:
           # Trusted publishing requires Node ≥22.14.0 and npm ≥11.5.1
           # (https://docs.npmjs.com/trusted-publishers).
-          node-version: '22.14'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "22.14"
+          registry-url: "https://registry.npmjs.org"
           # Avoid dependency cache on publish jobs (npm + setup-node guidance).
           package-manager-cache: false
 
@@ -65,8 +65,8 @@ jobs:
         with:
           version: npm run version-packages
           publish: npm run release
-          commit: 'chore: version packages'
-          title: 'chore: version packages'
+          commit: "chore: version packages"
+          title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Publishing uses OIDC (trusted publisher). Do not set

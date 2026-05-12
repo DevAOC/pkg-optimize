@@ -28,15 +28,15 @@ npm install
 
 Available scripts:
 
-| Script               | What it does                                              |
-| -------------------- | --------------------------------------------------------- |
-| `npm run build`      | Build CJS + ESM bundles into `dist/` via `tsup`.          |
-| `npm run dev`        | Same as `build`, in watch mode.                           |
-| `npm run lint`       | Run `tsc --noEmit` against `src/`.                        |
-| `npm test`           | Run the full Vitest suite once.                           |
-| `npm run test:watch` | Run Vitest in watch mode.                                 |
-| `npm run typecheck`  | Run `tsc --noEmit` against `src/`.                        |
-| `npm run changeset`  | Add a changeset describing your change (see below).       |
+| Script               | What it does                                        |
+| -------------------- | --------------------------------------------------- |
+| `npm run build`      | Build CJS + ESM bundles into `dist/` via `tsup`.    |
+| `npm run dev`        | Same as `build`, in watch mode.                     |
+| `npm run lint`       | Run `tsc --noEmit` against `src/`.                  |
+| `npm test`           | Run the full Vitest suite once.                     |
+| `npm run test:watch` | Run Vitest in watch mode.                           |
+| `npm run typecheck`  | Run `tsc --noEmit` against `src/`.                  |
+| `npm run changeset`  | Add a changeset describing your change (see below). |
 
 Before pushing a branch, please run at minimum:
 
@@ -64,13 +64,17 @@ src/
   presets/        # Built-in presets (JSON)
   types.ts        # Shared types
 tests/
-  *.test.ts       # Vitest specs (one per src module, plus integration)
+  *.test.ts       # Vitest specs for top-level `src/*.ts` modules
+  layouts/        # Mirrors `src/layouts/` (e.g. `barrel/graph.test.ts`)
+  presets/        # Mirrors `src/presets/` (e.g. `index.test.ts`)
+  integration/    # Cross-module flows (imports, dynamic imports, etc.)
   fixtures/       # Synthetic packages + source trees used by tests
   helpers.ts      # Test setup helpers
 ```
 
-When changing behavior, please add or update a test in `tests/`. Most modules
-have a paired `*.test.ts` — try to extend the existing file before creating a
+When changing behavior, please add or update a test in `tests/`. Paths mirror
+`src/` where possible (`src/foo/bar.ts` → `tests/foo/bar.test.ts`). Most
+modules have a paired spec — try to extend the existing file before creating a
 new one.
 
 ## Working on the scanner / pruner
@@ -95,7 +99,7 @@ aligned with the same fields we validate on user config via Zod in
 `src/config.ts`. To add one:
 
 1. Drop a new `<name>.json` in `src/presets/`.
-2. Add coverage in `tests/presets.test.ts` (and a fixture under
+2. Add coverage in `tests/presets/index.test.ts` (and a fixture under
    `tests/fixtures/` if the preset relies on a specific layout).
 3. Document it in the preset table in [`README.md`](./README.md).
 

@@ -39,7 +39,7 @@ That covers, in practice:
 - Icon and component packages (`react-icons/*`, `@radix-ui/*`, …)
 - Anything else where each file is independently importable
 
-The one shape pkg-optimize **cannot** safely prune is a **single-file barrel** — a package that puts everything inside one bundled `index.js`. The detector flags those with a warning.
+**Single-file barrels** (everything lives in one bundled `index.js` with no separate modules to delete) cannot be shrunk at file level. **Multi-file barrels** — an entry that re-exports from other files on disk — are traced, unused modules are removed, and pure barrel files are rewritten so they no longer point at deleted targets. If barrel analysis fails (unparseable entry, unsupported patterns), pruning is skipped with a warning.
 
 ### Dynamic imports are safe by construction
 
@@ -242,7 +242,7 @@ Per-package `scanDirs` overrides the top-level value — handy when only some wo
 
 pkg-optimize is designed to fail safe in CI:
 
-- A package it can't analyze — `barrel` layout, missing in `node_modules`, unreadable, etc. — is **skipped with a warning** and the exit code stays `0`. Your build still runs against the unpruned package.
+- A package it can't analyze — **barrel** layout where static re-export analysis fails, missing in `node_modules`, unreadable, etc. — is **skipped with a warning** and the exit code stays `0`. Your build still runs against the unpruned package.
 - A package referenced by an unresolvable dynamic import (`await import(somePath)`, `await import('pkg')` with no subpath, etc.) is **kept whole**. The scanner detects the dynamic reference, the pruner switches to restore-only mode, and a warning is emitted. Code-split chunks never break at runtime because the file they import was deleted.
 - A malformed `pkg-optimize.config.json` exits non-zero immediately so a bad config never silently breaks builds.
 - The cache is **never** mutated based on usage; only `node_modules/<targetPackage>/` is. If anything ever goes wrong, `rm -rf node_modules .pkg-optimize-cache && npm ci` rebuilds the world.
@@ -391,12 +391,12 @@ Options:
 
 ### Layouts
 
-| Layout        | Shape                                                                                         | Examples                                                |
-| ------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `flat`        | One file per member inside `memberDir` (e.g. `models/Foo.js`).                                | Apollo codegen, tRPC, Orval                             |
-| `nested`      | One subdir per member inside `memberDir`, with optional sub-files for operations.             | Gadget                                                  |
-| `destructure` | Each top-level entry of `memberDir` (or the package root) is itself a member — file _or_ dir. | `lodash-es`, `date-fns`, `react-icons/*`, `@radix-ui/*` |
-| `barrel`      | A single entry file re-exports everything; not safely prunable.                               | many bundled libs                                       |
+| Layout        | Shape                                                                                                                                                                 | Examples                                                |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `flat`        | One file per member inside `memberDir` (e.g. `models/Foo.js`).                                                                                                        | Apollo codegen, tRPC, Orval                             |
+| `nested`      | One subdir per member inside `memberDir`, with optional sub-files for operations.                                                                                     | Gadget                                                  |
+| `destructure` | Each top-level entry of `memberDir` (or the package root) is itself a member — file _or_ dir.                                                                         | `lodash-es`, `date-fns`, `react-icons/*`, `@radix-ui/*` |
+| `barrel`      | Entry re-exports from other files; pruner traces `export … from` / `export * from`, deletes unused modules, rewrites barrel files. Single-file bundles are unchanged. | internal libs, some SDKs                                |
 
 ### Merge priority (highest to lowest)
 
@@ -528,14 +528,14 @@ for (const pkg of config.packages) {
   const cache = new ShakerCache(
     resolved.cache.dir,
     resolved.targetPackage,
-    process.cwd(),
+    process.cwd()
   );
   if (!cache.isCached()) cache.prime();
 
   const usageMap = scanDirs(
     resolved.scanDirs,
     process.cwd(),
-    resolved.patterns,
+    resolved.patterns
   );
   const result = prune({
     usageMap,
