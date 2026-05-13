@@ -23,6 +23,7 @@ export {
   CLIENT_ENTRY,
   DEFAULT_SCAN_DIRS,
   MEMBER_DIRS,
+  MODEL_DIRS,
   SCAN_PATTERNS,
 } from "./constants";
 export { stripExtension } from "./files";

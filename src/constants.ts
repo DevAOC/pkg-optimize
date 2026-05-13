@@ -64,19 +64,19 @@ export const PRESERVE_REL_PATHS = [
 ] as const;
 
 /**
- * Flat member directories pruned per referenced `api.<member>` / hook usage.
- * Each path is relative to the package root; missing dirs are skipped.
+ * Flat model directories pruned per referenced `api.<model>` / hook usage.
+ * Only files under these paths are ever deleted; namespaces, connection/,
+ * entries, and Client.js are rewritten or left untouched.
  */
-export const MEMBER_DIRS = [
+export const MODEL_DIRS = [
   "dist-esm/models",
   "dist-cjs/models",
   "types/models",
   "types-esm/models",
-  "dist-esm/namespaces",
-  "dist-cjs/namespaces",
-  "types/namespaces",
-  "types-esm/namespaces",
 ] as const;
+
+/** @deprecated Use {@link MODEL_DIRS}. Namespaces are no longer deleted. */
+export const MEMBER_DIRS = MODEL_DIRS;
 
 export const EXTENSIONS = [".js", ".d.ts"] as const;
 

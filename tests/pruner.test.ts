@@ -120,9 +120,10 @@ describe("pruner", () => {
     const live = cache.getLivePackageDir();
     expect(existsSync(resolve(live, "dist-esm", "index.js"))).toBe(true);
     expect(existsSync(resolve(live, "dist-cjs", "index.js"))).toBe(true);
+    // Only `*/models` dirs are deleted; other paths like internal/ are untouched.
     expect(
       existsSync(resolve(live, "dist-esm", "internal", "Product.js"))
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("restore-only when wildcard is set", async () => {

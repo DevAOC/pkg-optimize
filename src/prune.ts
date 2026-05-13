@@ -9,18 +9,8 @@ import {
   rewriteBarrelSource,
   type BarrelPlan,
 } from "./barrel";
-import {
-  MEMBER_DIRS,
-  PRESERVE_DIR_PREFIXES,
-  PRESERVE_REL_PATHS,
-} from "./constants";
-import {
-  ensureFileFromCache,
-  isPreservedFilename,
-  pathMatchesFiles,
-  removeIfPresent,
-  walkFiles,
-} from "./files";
+import { MODEL_DIRS, PRESERVE_REL_PATHS } from "./constants";
+import { ensureFileFromCache } from "./files";
 import { pruneMemberDir } from "./members";
 
 export async function pruneClient(
@@ -67,14 +57,10 @@ export async function pruneClient(
     );
   }
 
-  await rewritePreservedClientFiles(
-    args,
-    allowSet.members,
-    result
-  );
+  await rewritePreservedClientFiles(args, allowSet.members, result);
 
   await Promise.all(
-    MEMBER_DIRS.map((dir) =>
+    MODEL_DIRS.map((dir) =>
       pruneMemberDir(
         resolve(sourceDir, dir),
         resolve(targetDir, dir),
@@ -88,115 +74,58 @@ export async function pruneClient(
 
   const keep = new Set(plan.keepRelPaths);
   keep.add("package.json");
-
   for (const rel of PRESERVE_REL_PATHS) {
     if (await pathExists(resolve(sourceDir, rel), signal)) keep.add(rel);
   }
-
-  await walkFiles(
-    sourceDir,
-    async (cachedPath) => {
-      const rel = relative(sourceDir, cachedPath).split(sep).join("/");
-      if (isPreservedFilename(basename(cachedPath))) keep.add(rel);
-      if (pathMatchesFiles(rel, allowSet.files)) keep.add(rel);
-    },
-    signal
-  );
-
-  for (const prefix of PRESERVE_DIR_PREFIXES) {
-    const abs = resolve(sourceDir, prefix);
-    if (!(await pathExists(abs, signal))) continue;
-    await walkFiles(
-      abs,
-      (cachedPath) => {
-        keep.add(relative(sourceDir, cachedPath).split(sep).join("/"));
-      },
-      signal
-    );
-  }
-
   await expandKeepWithSidecars(sourceDir, keep, signal);
 
-  await walkFiles(
-    sourceDir,
-    async (cachedPath) => {
-      signal?.throwIfAborted();
-      const rel = relative(sourceDir, cachedPath).split(sep).join("/");
-      const livePath = resolve(targetDir, rel);
+  for (const rel of plan.barrelRelPaths) {
+    signal?.throwIfAborted();
+    const cachedPath = resolve(sourceDir, rel);
+    const livePath = resolve(targetDir, rel);
+    if (!(await pathExists(cachedPath, signal))) continue;
 
-      if (MEMBER_DIRS.some((d) => rel.startsWith(`${d}/`))) {
-        return;
-      }
-
-      if (
-        basename(rel) === "Client.js" &&
-        (PRESERVE_REL_PATHS as readonly string[]).includes(rel)
-      ) {
-        return;
-      }
-
-      if (!keep.has(rel)) {
-        if (isPreservedFilename(basename(cachedPath))) {
-          await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
-          return;
-        }
-        dbg.prune(
-          "[%s] remove client file (not referenced): %s",
-          config.target,
-          rel
-        );
-        await removeIfPresent(livePath, soft, result, rel, signal);
-        return;
-      }
-
-      if (soft) {
-        await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
-        return;
-      }
-
-      if (plan.barrelRelPaths.has(rel)) {
-        let raw: string;
-        try {
-          raw = await readFile(cachedPath, "utf-8");
-        } catch (err) {
-          if (isAbortError(err)) throw err;
-          await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
-          return;
-        }
-        const rewritten = await rewriteBarrelSource(raw, allowSet.members, {
-          packageRoot: sourceDir,
-          fileAbs: cachedPath,
-          keepRelPaths: keep,
-        });
-        if (!rewritten.ok || !rewritten.code.trim()) {
-          result.warnings.push(
-            `${config.target}: could not safely rewrite entry file "${rel}" — copied verbatim from cache.`
-          );
-          await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
-          return;
-        }
-        const existed = await pathExists(livePath, signal);
-        await withSignal(signal, () =>
-          mkdir(dirname(livePath), { recursive: true })
-        );
-        await withSignal(signal, () =>
-          writeFile(livePath, rewritten.code, "utf8")
-        );
-        if (!existed) {
-          result.restored.push(rel);
-        } else {
-          result.kept.push(rel);
-        }
-        return;
-      }
-
+    if (soft) {
       await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
-    },
-    signal
-  );
+      continue;
+    }
+
+    let raw: string;
+    try {
+      raw = await readFile(cachedPath, "utf-8");
+    } catch (err) {
+      if (isAbortError(err)) throw err;
+      await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
+      continue;
+    }
+    const rewritten = await rewriteBarrelSource(raw, allowSet.members, {
+      packageRoot: sourceDir,
+      fileAbs: cachedPath,
+      keepRelPaths: keep,
+    });
+    if (!rewritten.ok || !rewritten.code.trim()) {
+      result.warnings.push(
+        `${config.target}: could not safely rewrite entry file "${rel}" — copied verbatim from cache.`
+      );
+      await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
+      continue;
+    }
+    const existed = await pathExists(livePath, signal);
+    await withSignal(signal, () =>
+      mkdir(dirname(livePath), { recursive: true })
+    );
+    await withSignal(signal, () =>
+      writeFile(livePath, rewritten.code, "utf8")
+    );
+    if (!existed) {
+      result.restored.push(rel);
+    } else {
+      result.kept.push(rel);
+    }
+  }
 
   dbg.prune(
-    "[%s] prune complete: keep=%d entry rewrites=%d",
+    "[%s] prune complete: models-only deletes, keep=%d entry rewrites=%d",
     config.target,
     keep.size,
     plan.barrelRelPaths.size
