@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, relative, resolve, sep } from "node:path";
+import { rewriteGadgetClientSource } from "./client";
 import { dbg } from "./logger";
 import type { AllowSet, PruneArgs, PruneResult } from "./types";
 import { isAbortError, pathExists, withSignal } from "./utils";
@@ -28,19 +29,6 @@ export async function pruneClient(
 ): Promise<void> {
   const { config, sourceDir, targetDir, soft, signal } = args;
 
-  await Promise.all(
-    MEMBER_DIRS.map((dir) =>
-      pruneMemberDir(
-        resolve(sourceDir, dir),
-        resolve(targetDir, dir),
-        dir,
-        args,
-        allowSet,
-        result
-      )
-    )
-  );
-
   let pkgJson: Record<string, unknown>;
   try {
     pkgJson = JSON.parse(
@@ -48,7 +36,7 @@ export async function pruneClient(
     ) as Record<string, unknown>;
   } catch {
     result.warnings.push(
-      `Could not read package.json for ${config.target} — entry rewrite skipped.`
+      `Could not read package.json for ${config.target} — pruning skipped.`
     );
     return;
   }
@@ -63,10 +51,29 @@ export async function pruneClient(
 
   if (!plan.ok) {
     result.warnings.push(
-      `${config.target}: entry analysis failed (${plan.reason}) — entry files not rewritten.`
+      `${config.target}: entry analysis failed (${plan.reason}) — pruning skipped.`
     );
     return;
   }
+
+  await rewritePreservedClientFiles(
+    args,
+    allowSet.members,
+    result
+  );
+
+  await Promise.all(
+    MEMBER_DIRS.map((dir) =>
+      pruneMemberDir(
+        resolve(sourceDir, dir),
+        resolve(targetDir, dir),
+        dir,
+        args,
+        allowSet,
+        result
+      )
+    )
+  );
 
   const keep = new Set(plan.keepRelPaths);
   keep.add("package.json");
@@ -107,6 +114,13 @@ export async function pruneClient(
       const livePath = resolve(targetDir, rel);
 
       if (MEMBER_DIRS.some((d) => rel.startsWith(`${d}/`))) {
+        return;
+      }
+
+      if (
+        basename(rel) === "Client.js" &&
+        (PRESERVE_REL_PATHS as readonly string[]).includes(rel)
+      ) {
         return;
       }
 
@@ -176,6 +190,57 @@ export async function pruneClient(
     keep.size,
     plan.barrelRelPaths.size
   );
+}
+
+async function rewritePreservedClientFiles(
+  args: PruneArgs,
+  keepCamelMembers: Set<string>,
+  result: PruneResult
+): Promise<void> {
+  const { config, sourceDir, targetDir, soft, signal } = args;
+
+  for (const rel of PRESERVE_REL_PATHS) {
+    if (basename(rel) !== "Client.js") continue;
+    const cachedPath = resolve(sourceDir, rel);
+    if (!(await pathExists(cachedPath, signal))) continue;
+
+    const livePath = resolve(targetDir, rel);
+    if (soft) {
+      await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
+      continue;
+    }
+
+    let raw: string;
+    try {
+      raw = await readFile(cachedPath, "utf-8");
+    } catch (err) {
+      if (isAbortError(err)) throw err;
+      await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
+      continue;
+    }
+
+    const rewritten = rewriteGadgetClientSource(raw, keepCamelMembers);
+    if (!rewritten.ok) {
+      result.warnings.push(
+        `${config.target}: could not rewrite "${rel}" — copied verbatim from cache.`
+      );
+      await ensureFileFromCache(cachedPath, livePath, result, rel, signal);
+      continue;
+    }
+
+    const existed = await pathExists(livePath, signal);
+    await withSignal(signal, () =>
+      mkdir(dirname(livePath), { recursive: true })
+    );
+    await withSignal(signal, () =>
+      writeFile(livePath, rewritten.code, "utf8")
+    );
+    if (!existed) {
+      result.restored.push(rel);
+    } else {
+      result.kept.push(rel);
+    }
+  }
 }
 
 async function expandKeepWithSidecars(

@@ -75,6 +75,13 @@ describe("pruner", () => {
       existsSync(resolve(live, "dist-esm", "connection", "support.js"))
     ).toBe(true);
     expect(existsSync(resolve(live, "dist-esm", "Client.js"))).toBe(true);
+    const clientJs = readFileSync(
+      resolve(live, "dist-esm", "Client.js"),
+      "utf8"
+    );
+    expect(clientJs).toContain("ShopifyProduct");
+    expect(clientJs).toContain("Session");
+    expect(clientJs).not.toContain("UnusedModel");
 
     const esmIndex = readFileSync(
       resolve(live, "dist-esm", "index.js"),
