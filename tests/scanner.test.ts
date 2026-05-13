@@ -1,5 +1,5 @@
-import { writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { scanDirs, scanFile } from "../src/scanner";
 import type { PatternsConfig, UsageMap } from "../src/types";
@@ -239,6 +239,58 @@ describe("scanner", () => {
     await expect(
       scanFile(file, MEMBER_PATTERNS, usage)
     ).resolves.toBeUndefined();
+  });
+
+  it("detects gadget shopify extension usage (re-exported api + @gadgetinc/preact)", async () => {
+    const apiFile = resolve(
+      ws.root,
+      "extensions/advance-event/src/api.ts"
+    );
+    const extFile = resolve(
+      ws.root,
+      "extensions/advance-event/src/MenuModal.tsx"
+    );
+    mkdirSync(dirname(apiFile), { recursive: true });
+    mkdirSync(dirname(extFile), { recursive: true });
+    writeFileSync(
+      apiFile,
+      `import { Client } from '@gadget-client/onelive-pos-app';
+export const api = new Client({ environment: 'production' });`
+    );
+    writeFileSync(
+      extFile,
+      `import { api } from '../../api';
+import { useFindMany } from '@gadgetinc/preact';
+useFindMany(api.event, { filter: {} });
+useFindMany(api.shopifyInventoryLevel, { first: 250 });`
+    );
+    const usage = await scanDirs(
+      ["extensions"],
+      ws.root,
+      MEMBER_PATTERNS,
+      { target: "@gadget-client/onelive-pos-app" }
+    );
+    expect(usage.members.has("event")).toBe(true);
+    expect(usage.members.has("shopifyInventoryLevel")).toBe(true);
+    expect(usage.members.has("shopifyOrder")).toBe(false);
+  });
+
+  it("ignores type-only imports from the target package", async () => {
+    const file = resolve(ws.root, "a.ts");
+    writeFileSync(
+      file,
+      `import type { Session, ShopifyOrder } from '@gadget-client/test-app';
+       import { Client, type ShopifyProduct } from '@gadget-client/test-app';
+       const x = api.shopProduct;`
+    );
+    const usage = emptyUsage();
+    await scanFile(file, MEMBER_PATTERNS, usage, {
+      target: "@gadget-client/test-app",
+    });
+    expect(usage.members.has("Session")).toBe(false);
+    expect(usage.members.has("ShopifyOrder")).toBe(false);
+    expect(usage.members.has("ShopifyProduct")).toBe(false);
+    expect(usage.members.has("shopProduct")).toBe(true);
   });
 
   it("scans across multiple directories", async () => {

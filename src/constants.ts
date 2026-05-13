@@ -26,6 +26,12 @@ export const SCAN_PATTERNS: PatternsConfig = {
 };
 
 /**
+ * Models the generated `Client.js` / Shopify extension `Provider` stack expect
+ * at runtime even when app code never calls `api.session` directly.
+ */
+export const INFRA_MEMBERS = ["session", "currentSession"] as const;
+
+/**
  * Relative paths (from the package root) whose entire trees must never be
  * pruned — shared client runtime pulled in by `Client.js` / the connection
  * stack, not by per-model exports on the package entry.

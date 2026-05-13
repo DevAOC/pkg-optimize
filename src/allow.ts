@@ -1,4 +1,5 @@
 import type { AllowSet, UsageMap } from "./types";
+import { INFRA_MEMBERS } from "./constants";
 import { toCamelCase } from "./utils";
 import { normalizeFileRef } from "./files";
 
@@ -6,7 +7,7 @@ export function buildAllowSet(
   usageMap: UsageMap,
   allow: { include?: string[] } | undefined
 ): AllowSet {
-  const members = new Set<string>();
+  const members = new Set<string>(INFRA_MEMBERS);
   const operations = new Set<string>();
   const files = new Set<string>();
 

@@ -109,6 +109,12 @@ export async function scanDirs(
     stats.skippedNonSourceExt,
     stats.skippedMissingScanRoots
   );
+  if (usageMap.members.size > 0) {
+    dbg.scan(
+      "members: %s",
+      [...usageMap.members].sort().join(", ")
+    );
+  }
 
   return usageMap;
 }
@@ -319,6 +325,10 @@ function handleImport(
   const subpath = matchPackageSubpath(source, target);
   if (subpath === null) return;
 
+  // `import type { Session, ShopifyOrder } from '@gadget-client/...'` must not
+  // keep runtime model files the app never calls through `api.*` or hooks.
+  if (node.importKind === "type") return;
+
   const isDeepImport = subpath.length > 0;
 
   // Side-effect import: `import 'pkg'` or `import 'pkg/sub'`.
@@ -329,6 +339,7 @@ function handleImport(
 
   for (const spec of node.specifiers) {
     if (spec.type === "ImportSpecifier") {
+      if (spec.importKind === "type") continue;
       if (isDeepImport) {
         // Deep imports go straight to the file allow-list; we don't try to
         // drill into the named exports of an inner module (they may be barrel
