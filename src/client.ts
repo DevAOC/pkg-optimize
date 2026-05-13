@@ -2,6 +2,7 @@ import { parse } from "@babel/parser";
 import type { ParserOptions } from "@babel/parser";
 import type {
   ClassDeclaration,
+  ClassMethod,
   File,
   Node,
   StringLiteral,
@@ -42,6 +43,35 @@ function nodeReferencesRemoved(
   return false;
 }
 
+function rewriteConstructor(
+  source: string,
+  member: ClassMethod,
+  removedIds: Set<string>
+): string | null {
+  const body = member.body;
+  const keptStmts: string[] = [];
+  for (const stmt of body.body) {
+    if (nodeReferencesRemoved(source, stmt, removedIds)) continue;
+    keptStmts.push(sliceSource(source, stmt.start!, stmt.end!));
+  }
+  if (keptStmts.length === 0) return null;
+  const open = sliceSource(source, member.start!, body.start! + 1);
+  const close = sliceSource(source, body.end!, member.end!);
+  return `${open}${keptStmts.join("\n")}${close}`;
+}
+
+function rewriteClassMember(
+  source: string,
+  member: ClassDeclaration["body"]["body"][number],
+  removedIds: Set<string>
+): string | null {
+  if (member.type === "ClassMethod" && member.kind === "constructor") {
+    return rewriteConstructor(source, member, removedIds);
+  }
+  if (nodeReferencesRemoved(source, member, removedIds)) return null;
+  return sliceSource(source, member.start!, member.end!);
+}
+
 function rewriteClassDeclaration(
   source: string,
   classNode: ClassDeclaration,
@@ -49,10 +79,10 @@ function rewriteClassDeclaration(
 ): string {
   const bodyKept: string[] = [];
   for (const member of classNode.body.body) {
-    if (nodeReferencesRemoved(source, member, removedIds)) continue;
-    bodyKept.push(sliceSource(source, member.start!, member.end!));
+    const rewritten = rewriteClassMember(source, member, removedIds);
+    if (rewritten) bodyKept.push(rewritten);
   }
-  const open = sliceSource(source, classNode.start!, classNode.body.start!);
+  const open = sliceSource(source, classNode.start!, classNode.body.start! + 1);
   const close = sliceSource(source, classNode.body.end!, classNode.end!);
   const inner = bodyKept.map((s) => s.trimEnd()).filter(Boolean).join("\n");
   return inner ? `${open}${inner}${close}` : `${open}${close}`;

@@ -43,4 +43,32 @@ describe("rewriteGadgetClientSource", () => {
     expect(result.code).toContain("InventoryNamespace");
     expect(result.code).not.toContain("UnusedModel");
   });
+
+  it("keeps class braces and getters when constructor loses only pruned assignments", () => {
+    const source = `
+import { EventManager } from "./models/Event.js";
+import { UnusedModelManager } from "./models/UnusedModel.js";
+
+export class OnelivePosAppClient {
+  constructor(connection) {
+    this.connection = connection;
+    this.event = new EventManager(connection);
+    this.unusedModel = new UnusedModelManager(connection);
+  }
+
+  get actAsAdmin() {
+    return false;
+  }
+}
+`.trim();
+
+    const result = rewriteGadgetClientSource(source, new Set(["event"]));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.code).toMatch(/class OnelivePosAppClient\s*\{/);
+    expect(result.code).toContain("get actAsAdmin()");
+    expect(result.code).toContain("EventManager");
+    expect(result.code).not.toContain("UnusedModel");
+    expect(result.code).not.toContain("unusedModel");
+  });
 });
