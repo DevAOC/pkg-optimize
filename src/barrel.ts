@@ -4,7 +4,10 @@ import type { File, StringLiteral } from "@babel/types";
 import { readFile } from "node:fs/promises";
 import { dirname, relative, resolve as resolvePath } from "node:path";
 import { resolveAllPackageEntries, resolveExistingModule } from "./detector/entries";
+import { PRESERVE_REL_PATHS } from "./constants";
 import { toCamelCase } from "./utils";
+
+const PRESERVE_ENTRY_PATHS = new Set<string>(PRESERVE_REL_PATHS);
 
 export interface BarrelPlan {
   ok: true;
@@ -85,6 +88,10 @@ export async function analyzeBarrelPackage(
     const entryRel = toPosixRel(packageRoot, entryAbs);
     keepRelPaths.add(entryRel);
 
+    // `Client.js` / `builder.js` are rewritten by `rewriteGadgetClientSource`,
+    // not barrel-traced — parsing them as re-export barrels often fails.
+    if (PRESERVE_ENTRY_PATHS.has(entryRel)) continue;
+
     // Each entry must at least survive. If it can't be parsed (e.g. a minified
     // CJS bundle that confuses Babel) we keep the file itself and continue —
     // refusing to prune is safer than failing the whole package.
@@ -108,7 +115,7 @@ export async function analyzeBarrelPackage(
       new Set(),
       signal,
     );
-    if (!surface.ok) return surface;
+    if (!surface.ok) continue;
 
     const neededExportNames = new Set<string>();
     for (const name of surface.names) {
@@ -129,7 +136,7 @@ export async function analyzeBarrelPackage(
         new Set(),
         signal,
       );
-      if (!traced.ok) return traced;
+      if (!traced.ok) continue;
       for (const p of traced.implRelPaths) keepRelPaths.add(p);
       for (const p of traced.visitedRelPaths) {
         visitedBarrels.add(p);
@@ -227,10 +234,7 @@ async function collectExportSurface(
         inProgress,
         signal,
       );
-      if (!inner.ok) {
-        inProgress.delete(rel);
-        return inner;
-      }
+      if (!inner.ok) continue;
       for (const n of inner.names) names.add(n);
     } else if (stmt.type === "ExportDefaultDeclaration") {
       names.add("default");
@@ -351,10 +355,7 @@ async function traceExport(
           stack,
           signal,
         );
-        if (!inner.ok) {
-          stack.delete(key);
-          return inner;
-        }
+        if (!inner.ok) continue;
         for (const p of inner.implRelPaths) implRelPaths.add(p);
         for (const p of inner.visitedRelPaths) visitedRelPaths.add(p);
         stack.delete(key);

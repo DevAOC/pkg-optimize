@@ -7,6 +7,7 @@ import { isAbortError, pathExists, withSignal } from "./utils";
 import {
   analyzeBarrelPackage,
   rewriteBarrelSource,
+  type BarrelPlan,
 } from "./barrel";
 import {
   MEMBER_DIRS,
@@ -41,7 +42,7 @@ export async function pruneClient(
     return;
   }
 
-  const plan = await analyzeBarrelPackage(
+  const analyzed = await analyzeBarrelPackage(
     sourceDir,
     pkgJson,
     allowSet.members,
@@ -49,11 +50,21 @@ export async function pruneClient(
     signal
   );
 
-  if (!plan.ok) {
+  const plan: BarrelPlan = analyzed.ok
+    ? analyzed
+    : {
+        ok: true,
+        keepRelPaths: new Set([
+          "package.json",
+          ...(PRESERVE_REL_PATHS as readonly string[]),
+        ]),
+        barrelRelPaths: new Set(),
+      };
+
+  if (!analyzed.ok) {
     result.warnings.push(
-      `${config.target}: entry analysis failed (${plan.reason}) — pruning skipped.`
+      `${config.target}: entry analysis failed (${analyzed.reason}) — barrel rewrite skipped; model pruning still applied.`
     );
-    return;
   }
 
   await rewritePreservedClientFiles(

@@ -1,5 +1,5 @@
 import type { AllowSet, UsageMap } from "./types";
-import { INFRA_MEMBERS } from "./constants";
+import { INFRA_MEMBERS, NON_MODEL_MEMBERS } from "./constants";
 import { toCamelCase } from "./utils";
 import { normalizeFileRef } from "./files";
 
@@ -39,6 +39,8 @@ export function buildAllowSet(
     const [member] = o.split(".");
     if (member) members.add(member);
   }
+
+  for (const sym of NON_MODEL_MEMBERS) members.delete(sym);
 
   return { members, operations, files };
 }

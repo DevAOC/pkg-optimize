@@ -32,6 +32,17 @@ export const SCAN_PATTERNS: PatternsConfig = {
 export const INFRA_MEMBERS = ["session", "currentSession"] as const;
 
 /**
+ * Package entry exports that are not `models/*.js` / `namespaces/*.js` files.
+ * The scanner may record these from `import { Client } from '@gadget-client/…'`.
+ */
+export const NON_MODEL_MEMBERS = [
+  "client",
+  "jsonvalue",
+  "browserclient",
+  "gadgetconnection",
+] as const;
+
+/**
  * Relative paths (from the package root) whose entire trees must never be
  * pruned — shared client runtime pulled in by `Client.js` / the connection
  * stack, not by per-model exports on the package entry.

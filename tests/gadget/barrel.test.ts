@@ -193,6 +193,52 @@ describe("analyzeBarrelPackage", () => {
     }
   });
 
+  it("skips unparseable dist-esm/Client.js package entries without failing", async () => {
+    root = mkdtempSync(join(tmpdir(), "pkg-opt-barrel-"));
+    mkdirSync(join(root, "dist-esm", "models"), { recursive: true });
+    writeFileSync(
+      join(root, "dist-esm", "models", "ShopifyProduct.js"),
+      "export const ShopifyProduct = 1;"
+    );
+    writeFileSync(
+      join(root, "dist-esm", "models", "Unused.js"),
+      "export const Unused = 1;"
+    );
+    writeFileSync(
+      join(root, "dist-esm", "index.js"),
+      `export { ShopifyProduct } from "./models/ShopifyProduct.js";
+export { Unused } from "./models/Unused.js";`
+    );
+    writeFileSync(join(root, "dist-esm", "Client.js"), "export class Client {{{");
+    const pkgJson = {
+      name: "t",
+      main: "./dist-esm/Client.js",
+      module: "./dist-esm/index.js",
+      exports: {
+        ".": {
+          import: "./dist-esm/index.js",
+          default: "./dist-esm/Client.js",
+        },
+      },
+    };
+    writeFileSync(join(root, "package.json"), JSON.stringify(pkgJson));
+
+    const result = await analyzeBarrelPackage(
+      root,
+      pkgJson,
+      new Set(["shopifyProduct"]),
+      new Set()
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.keepRelPaths.has("dist-esm/Client.js")).toBe(true);
+    expect(result.keepRelPaths.has("dist-esm/index.js")).toBe(true);
+    expect(result.keepRelPaths.has("dist-esm/models/ShopifyProduct.js")).toBe(
+      true
+    );
+    expect(result.keepRelPaths.has("dist-esm/models/Unused.js")).toBe(false);
+  });
+
   it("keeps every resolved entry from a dual-bundle exports map", async () => {
     root = mkdtempSync(join(tmpdir(), "pkg-opt-barrel-"));
     cpSync(join(PACKAGE_FIXTURES, "gadget-dual-bundle"), root, {
