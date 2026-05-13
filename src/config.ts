@@ -1,65 +1,19 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { z, type ZodIssue } from "zod";
+import { DEFAULT_SCAN_DIRS } from "./constants";
 import { isDirectory, pathExists } from "./utils";
 import type { ShakerConfig } from "./types";
 
 export const CONFIG_FILENAME = "pkg-optimize.config.json";
 
-const SCAN_DIR_CANDIDATES = ["src", "web", "extensions", "app"] as const;
-
-const argStyleEnum = z.enum([
-  "namespace-member",
-  "namespace-member-member",
-  "string",
-  "imported-identifier",
-  "object-property-identifier",
-  "object-property-string",
-]);
-
-const hookPatternSchema = z
-  .object({
-    name: z.string(),
-    argIndex: z.number().nonnegative(),
-    argStyle: argStyleEnum,
-    objectProperty: z.string().optional(),
-  })
-  .strict();
-
-const patternsSchema = z
-  .object({
-    namespace: z.string().optional(),
-    accessStyle: z.enum(["member", "destructure"]).optional(),
-    depth: z
-      .object({
-        member: z.number(),
-        operation: z.number(),
-      })
-      .strict()
-      .optional(),
-    hooks: z.array(hookPatternSchema).optional(),
-  })
-  .strict();
-
-const packageStructureSchema = z
-  .object({
-    layout: z.enum(["flat", "nested", "destructure", "barrel"]).optional(),
-    memberDir: z.string().optional(),
-    operationDir: z.string().optional(),
-    naming: z
-      .enum(["PascalCase", "camelCase", "kebab-case", "snake_case"])
-      .optional(),
-    extensions: z.array(z.string()).optional(),
-    preserve: z.array(z.string()).optional(),
-  })
-  .strict();
+const SCAN_DIR_CANDIDATES = ["web", "extensions", "src", "app"] as const;
 
 const packageEntrySchema = z
   .object({
     target: z.string().min(1).optional(),
     targetPackage: z.string().min(1).optional(),
     entry: z.union([z.string(), z.array(z.string())]).optional(),
-    extends: z.string().optional(),
     scanDirs: z.array(z.string()).optional(),
     allow: z
       .object({
@@ -67,10 +21,8 @@ const packageEntrySchema = z
       })
       .strict()
       .optional(),
-    patterns: patternsSchema.optional(),
-    packageStructure: packageStructureSchema.optional(),
   })
-  .passthrough()
+  .strict()
   .superRefine((data, ctx) => {
     if (!data.target && !data.targetPackage) {
       ctx.addIssue({
@@ -104,7 +56,7 @@ const shakerConfigSchema = z
       .optional(),
     packages: z.array(packageEntrySchema),
   })
-  .passthrough();
+  .strict();
 
 export async function loadConfig(cwd: string = process.cwd()): Promise<{
   config: ShakerConfig;
@@ -156,10 +108,13 @@ export async function applyTopLevelDefaults(
   config: ShakerConfig,
   cwd: string
 ): Promise<ShakerConfig> {
+  const detected = await detectScanDirs(cwd);
   const inferredScanDirs =
     config.scanDirs && config.scanDirs.length > 0
       ? config.scanDirs
-      : await detectScanDirs(cwd);
+      : detected.length > 0
+      ? detected
+      : [...DEFAULT_SCAN_DIRS];
 
   return {
     ...config,
@@ -175,9 +130,10 @@ export async function applyTopLevelDefaults(
 }
 
 async function buildZeroConfig(cwd: string): Promise<ShakerConfig> {
+  const scanDirs = await detectScanDirs(cwd);
   return {
     packages: [],
-    scanDirs: await detectScanDirs(cwd),
+    scanDirs: scanDirs.length > 0 ? scanDirs : [...DEFAULT_SCAN_DIRS],
   };
 }
 
@@ -212,8 +168,7 @@ function formatZodIssues(err: z.ZodError): string {
           : `/${issue.path
               .map((segment: string | number) => String(segment))
               .join("/")}`;
-      const message = issue.message;
-      return `${suffix} ${message}`.trim();
+      return `${suffix} ${issue.message}`.trim();
     })
     .join("; ");
 }

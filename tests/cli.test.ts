@@ -94,21 +94,21 @@ describe("runCli", () => {
   });
 
   it("runs a full prune successfully for a configured workspace", async () => {
-    ws.installFixturePackage("gadget-nested", "@example/test-app");
+    ws.installFixturePackage("gadget-nested", "@gadget-client/test-app");
     ws.installFixtureSource({ dirs: ["web"] });
     ws.writeConfig({
       scanDirs: ["web"],
-      packages: [{ target: "@example/test-app" }],
+      packages: [{ target: "@gadget-client/test-app" }],
     });
     expect(await runCli({ argv: [], cwd: ws.root })).toBe(0);
   });
 
   it("writes detected snapshot to the cache dir without touching the user's config", async () => {
-    ws.installFixturePackage("gadget-nested", "@example/test-app");
+    ws.installFixturePackage("gadget-nested", "@gadget-client/test-app");
     ws.installFixtureSource({ dirs: ["web"] });
     const configJson = {
       scanDirs: ["web"],
-      packages: [{ target: "@example/test-app" }],
+      packages: [{ target: "@gadget-client/test-app" }],
     };
     ws.writeConfig(configJson);
     expect(await runCli({ argv: ["run"], cwd: ws.root })).toBe(0);
@@ -128,15 +128,15 @@ describe("runCli", () => {
       packages: Record<string, { confidence?: unknown }>;
     };
     expect(snapshot.version).toBe(1);
-    expect(snapshot.packages["@example/test-app"]?.confidence).toBeDefined();
+    expect(snapshot.packages["@gadget-client/test-app"]?.confidence).toBeDefined();
   });
 
   it("watch mode stops cleanly when signal is aborted", async () => {
-    ws.installFixturePackage("gadget-nested", "@example/test-app");
+    ws.installFixturePackage("gadget-nested", "@gadget-client/test-app");
     ws.installFixtureSource({ dirs: ["web"] });
     ws.writeConfig({
       scanDirs: ["web"],
-      packages: [{ target: "@example/test-app" }],
+      packages: [{ target: "@gadget-client/test-app" }],
     });
     const ac = new AbortController();
     const done = runCli({

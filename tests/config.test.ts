@@ -65,22 +65,22 @@ describe("config", () => {
       scanDirs: ["web"],
       packages: [
         {
-          target: "@example/generated-client",
+          target: "@gadget-client/my-app",
           allow: { include: ["authSession"] },
         },
       ],
     });
     const { config } = await loadConfig(ws.root);
     expect(config.packages.length).toBe(1);
-    expect(config.packages[0].target).toBe("@example/generated-client");
+    expect(config.packages[0].target).toBe("@gadget-client/my-app");
     expect(configPath).toBe(resolve(ws.root, "pkg-optimize.config.json"));
   });
 
   it("normalizes legacy targetPackage to target", () => {
     const config = validate({
-      packages: [{ targetPackage: "lodash-es" }],
+      packages: [{ targetPackage: "@gadget-client/legacy" }],
     });
-    expect(config.packages[0].target).toBe("lodash-es");
+    expect(config.packages[0].target).toBe("@gadget-client/legacy");
   });
 
   it("accepts optional entry on packages", () => {
@@ -104,74 +104,17 @@ describe("config", () => {
     ).not.toThrow();
   });
 
-  it("rejects legacy field names (modelArgIndex / depth.model)", () => {
+  it("rejects patterns in config (hardcoded in the tool)", () => {
     expect(() =>
       validate({
         packages: [
           {
-            target: "x",
-            patterns: {
-              namespace: "api",
-              accessStyle: "member",
-              depth: { model: 1, action: 2 },
-            },
+            target: "@gadget-client/x",
+            patterns: { namespace: "api" },
           },
         ],
       })
     ).toThrow();
-
-    expect(() =>
-      validate({
-        packages: [
-          {
-            target: "x",
-            patterns: {
-              namespace: "api",
-              accessStyle: "member",
-              depth: { member: 1, operation: 2 },
-              hooks: [
-                {
-                  name: "useFoo",
-                  modelArgIndex: 0,
-                  argStyle: "imported-identifier",
-                },
-              ],
-            },
-          },
-        ],
-      })
-    ).toThrow();
-  });
-
-  it("accepts the new neutral field names", () => {
-    expect(() =>
-      validate({
-        packages: [
-          {
-            target: "x",
-            patterns: {
-              namespace: "api",
-              accessStyle: "member",
-              depth: { member: 1, operation: 2 },
-              hooks: [
-                {
-                  name: "useFoo",
-                  argIndex: 0,
-                  argStyle: "imported-identifier",
-                },
-              ],
-            },
-            packageStructure: {
-              layout: "flat",
-              memberDir: "foo",
-              naming: "PascalCase",
-              extensions: [".js"],
-              preserve: ["index.js"],
-            },
-          },
-        ],
-      })
-    ).not.toThrow();
   });
 
   it("detects scan dirs from filesystem when none configured", async () => {

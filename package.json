@@ -1,7 +1,7 @@
 {
   "name": "pkg-optimize",
   "version": "0.3.0",
-  "description": "Zero-config tree-shaker for any npm package whose files are independently importable. Prunes unused files from one or more target packages based on what your source code actually references — generated SDK clients, codegen output, and general-purpose libraries alike.",
+  "description": "Prunes unused models from symlinked @gadget-client/* packages in Gadget apps by scanning web/ and extensions/ for api.* and hook usage.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -15,8 +15,7 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
-    },
-    "./presets/*": "./dist/presets/*.json"
+    }
   },
   "bin": {
     "pkg-optimize": "./dist/cli.js"
@@ -48,23 +47,13 @@
     "node": ">=22.0.0"
   },
   "keywords": [
+    "gadget",
     "tree-shaking",
     "pruning",
     "node-modules",
     "bundle-size",
-    "codegen",
-    "sdk",
-    "client",
-    "lodash",
-    "date-fns",
-    "react-icons",
-    "apollo",
-    "trpc",
-    "urql",
-    "relay",
-    "react-query",
-    "graphql",
-    "openapi"
+    "gadget-client",
+    "shopify"
   ],
   "license": "MIT",
   "dependencies": {

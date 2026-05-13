@@ -1,5 +1,5 @@
 /**
- * Public API — direct exports from implementation modules (no import/re-export indirection).
+ * Public API for the Gadget client optimizer.
  */
 
 export { ShakerCache } from "./cache";
@@ -14,21 +14,18 @@ export {
   writeConfig,
 } from "./config";
 export {
-  detectExtensions,
-  detectLayout,
-  detectMemberDir,
-  detectNaming,
   detectPackageConfig,
   resolveAllPackageEntries,
   resolvePackageEntryAbs,
-  scoreConfidence,
 } from "./detector";
 export type { DetectPackageOptions } from "./detector";
 export {
-  isPreserved,
-  stripExtension,
-  symbolToFilename,
-} from "./layouts/shared";
+  CLIENT_ENTRY,
+  DEFAULT_SCAN_DIRS,
+  MEMBER_DIRS,
+  SCAN_PATTERNS,
+} from "./constants";
+export { stripExtension } from "./files";
 export {
   configureLogging,
   dbg,
@@ -37,9 +34,8 @@ export {
   logVerboseRunSummary,
   primeErrorDebug,
 } from "./logger";
-export { listPresetNames, loadPreset, matchPreset } from "./presets/index";
 export { prune } from "./pruner";
-export { deepMerge, mergeEntryForDetect, resolvePackageConfig } from "./resolver";
+export { deepMerge, resolveEntryForDetect, resolvePackageConfig } from "./resolver";
 export {
   scanDirs,
   scanFile,
@@ -49,14 +45,15 @@ export {
 export { startWatcher } from "./watcher";
 export { isAbortError, toCamelCase } from "./utils";
 export type {
+  AllowSet,
   DetectedConfig,
   HookPattern,
   PackageConfig,
   PatternsConfig,
   PruneResult,
+  PruneArgs,
   ResolvedPackageConfig,
   RunMode,
   ShakerConfig,
-  StructureConfig,
   UsageMap,
 } from "./types";

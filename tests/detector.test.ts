@@ -1,14 +1,7 @@
 import { cpSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  detectLayout,
-  detectMemberDir,
-  detectNaming,
-  detectPackageConfig,
-  scoreConfidence,
-} from "../src/detector";
-import { matchPreset } from "../src/presets/index";
+import { detectPackageConfig } from "../src/detector";
 import { createWorkspace, FIXTURE_PATHS, type Workspace } from "./helpers";
 
 describe("detector", () => {
@@ -18,235 +11,54 @@ describe("detector", () => {
   });
   afterEach(() => ws.cleanup());
 
-  it("infers nested layout from a fixture with member/<Name>/<sub>/ subdirs", async () => {
-    const pkgDir = ws.installFixturePackage(
-      "gadget-nested",
-      "@example/test-app",
-    );
-    expect(await detectLayout(pkgDir)).toBe("nested");
+  it("skips non-gadget targets", async () => {
+    const detected = await detectPackageConfig("lodash-es", ws.root);
+    expect(detected.skip).toBe(true);
   });
 
-  it("infers flat layout from a fixture with member files only", async () => {
-    const pkgDir = ws.installFixturePackage("gadget-flat", "@example/flat-app");
-    expect(await detectLayout(pkgDir)).toBe("flat");
-  });
-
-  it("detects member dir", async () => {
-    const pkgDir = ws.installFixturePackage("gadget-flat", "@example/flat-app");
-    expect(await detectMemberDir(pkgDir, "flat")).toBe("models");
-  });
-
-  it("infers PascalCase naming from filenames", async () => {
-    const pkgDir = ws.installFixturePackage("gadget-flat", "@example/flat-app");
-    expect(await detectNaming(pkgDir, "flat", "models")).toBe("PascalCase");
-  });
-
-  it("infers kebab-case naming from kebab-style fixtures", async () => {
-    const pkgDir = ws.installFixturePackage(
-      "apollo-flat",
-      "@example/kebab-app",
-    );
-    expect(await detectNaming(pkgDir, "flat", "operations")).toBe("kebab-case");
-  });
-
-  it("matches Gadget preset for @gadget-client/* package names", () => {
-    const preset = matchPreset("@gadget-client/foo");
-    expect(preset).not.toBeNull();
-    expect(preset?.patterns?.namespace).toBe("api");
-    expect(preset?.packageStructure?.layout).toBe("nested");
-  });
-
-  it("matches Apollo preset for @apollo/* package names", () => {
-    const preset = matchPreset("@apollo/client");
-    expect(preset).not.toBeNull();
-    expect(preset?.packageStructure?.layout).toBe("flat");
-  });
-
-  it("returns no preset for unknown package patterns", () => {
-    const preset = matchPreset("some-random-package");
-    expect(preset).toBeNull();
-  });
-
-  it("matches urql preset for urql / @urql/* package names", () => {
-    expect(matchPreset("urql")?.patterns?.namespace).toBe("graphql");
-    expect(matchPreset("@urql/core")).not.toBeNull();
-  });
-
-  it("matches relay preset for react-relay", () => {
-    const preset = matchPreset("react-relay");
-    expect(preset).not.toBeNull();
-    expect(preset?.packageStructure?.memberDir).toBe("__generated__");
-  });
-
-  it("matches react-query preset for @tanstack/react-query", () => {
-    const preset = matchPreset("@tanstack/react-query");
-    expect(preset).not.toBeNull();
-    expect(
-      preset?.patterns?.hooks?.find((h) => h.name === "useMutation"),
-    ).toBeDefined();
-  });
-
-  it("matches swr preset for swr package", () => {
-    const preset = matchPreset("swr");
-    expect(preset).not.toBeNull();
-    expect(
-      preset?.patterns?.hooks?.find((h) => h.name === "useSWR"),
-    ).toBeDefined();
-  });
-
-  it("matches orval / kubb / graphql-codegen presets", () => {
-    expect(matchPreset("orval")).not.toBeNull();
-    expect(matchPreset("@orval/core")).not.toBeNull();
-    expect(matchPreset("@kubb/swagger-tanstack-query")).not.toBeNull();
-    expect(
-      matchPreset("@graphql-codegen/typescript-react-query"),
-    ).not.toBeNull();
-  });
-
-  it("matches destructure-style presets (lodash-es, date-fns, react-icons, radix)", () => {
-    expect(matchPreset("lodash-es")?.packageStructure?.layout).toBe(
-      "destructure",
-    );
-    expect(matchPreset("date-fns")?.packageStructure?.layout).toBe(
-      "destructure",
-    );
-    expect(matchPreset("react-icons")?.packageStructure?.layout).toBe(
-      "destructure",
-    );
-    expect(matchPreset("react-icons/fa")?.packageStructure?.layout).toBe(
-      "destructure",
-    );
-    expect(
-      matchPreset("@radix-ui/react-dialog")?.packageStructure?.layout,
-    ).toBe("destructure");
-  });
-
-  it("infers destructure layout for a barrel-of-named-exports package", async () => {
-    const pkgDir = ws.installFixturePackage(
-      "destructure-flat",
-      "@example/destructure-pkg",
-    );
-    expect(await detectLayout(pkgDir)).toBe("destructure");
-    expect(await detectMemberDir(pkgDir, "destructure")).toBe(".");
-  });
-
-  it("classifies dual-bundle packages (dist-esm/dist-cjs/types) as barrel, not destructure", async () => {
-    ws.installFixturePackage(
-      "gadget-dual-bundle",
-      "@example/gadget-dual-bundle",
-    );
+  it("resolves a fixture in node_modules", async () => {
+    ws.installFixturePackage("gadget-nested", "@gadget-client/test-app");
     const detected = await detectPackageConfig(
-      "@example/gadget-dual-bundle",
-      ws.root,
+      "@gadget-client/test-app",
+      ws.root
     );
-    // Without the nested-entry guard, the destructure heuristic fires at the
-    // package root (5 sibling build-output dirs) and the pruner deletes every
-    // one of them. The package must be classified as barrel so the barrel
-    // pruner gets a chance to trace the actual entries.
+    expect(detected.confidence).toBe("high");
     expect(detected.skip).not.toBe(true);
-    expect(detected.packageStructure?.layout).toBe("barrel");
   });
 
-  it("suppresses destructure detection at root when allowDestructure=false", async () => {
-    const pkgDir = ws.installFixturePackage(
-      "destructure-flat",
-      "@example/destructure-pkg-strict",
-    );
-    expect(await detectLayout(pkgDir, { allowDestructure: false })).toBe(
-      "barrel",
-    );
-  });
-
-  it('still classifies a single-file barrel as "barrel"', async () => {
-    const pkgRoot = resolve(ws.root, "node_modules", "tiny-barrel");
-    mkdirSync(pkgRoot, { recursive: true });
-    writeFileSync(
-      resolve(pkgRoot, "package.json"),
-      JSON.stringify({ name: "tiny-barrel", main: "index.js" }),
-    );
-    writeFileSync(
-      resolve(pkgRoot, "index.js"),
-      `export const a = 1; export const b = 2;`,
-    );
-    expect(await detectLayout(pkgRoot)).toBe("barrel");
-  });
-
-  it("produces a full DetectedConfig from a fixture package", async () => {
-    ws.installFixturePackage("gadget-nested", "@example/test-app");
-    const detected = await detectPackageConfig("@example/test-app", ws.root);
-    expect(detected.packageStructure?.layout).toBe("nested");
-    expect(detected.packageStructure?.memberDir).toBe("models");
-    expect(detected.packageStructure?.naming).toBe("PascalCase");
-    expect(detected.patterns?.namespace).toBe("api");
-    expect(["high", "medium", "low"]).toContain(detected.confidence);
-  });
-
-  it("infers nested layout and dist/models when exports point at dist/ only", async () => {
-    ws.installFixturePackage(
-      "gadget-dist-entry",
-      "@example/gadget-dist-layout",
-    );
-    const detected = await detectPackageConfig(
-      "@example/gadget-dist-layout",
-      ws.root,
-    );
-    expect(detected.packageStructure?.layout).toBe("nested");
-    expect(detected.packageStructure?.memberDir).toBe("dist/models");
-    expect(detected.patterns?.namespace).toBe("api");
-  });
-
-  it("infers nested layout from preset when the package is symlink-hoisted", async () => {
+  it("resolves symlink-hoisted installs", async () => {
     ws.installFixturePackageSymlinked(
       "gadget-nested",
-      "@gadget-client/test-app",
+      "@gadget-client/test-app"
     );
     const detected = await detectPackageConfig(
       "@gadget-client/test-app",
-      ws.root,
+      ws.root
     );
-    expect(detected.packageStructure?.layout).toBe("nested");
-    expect(detected.packageStructure?.memberDir).toBe("models");
-    expect(detected.warnings?.some((w) => /barrel package/i.test(w))).toBe(
-      false,
-    );
+    expect(detected.skip).not.toBe(true);
   });
 
-  it("resolves package via bounded project search when node_modules has no entry", async () => {
-    const target = "@example/project-tree-client";
+  it("resolves dist-esm fixture via .gadget/client entry", async () => {
+    const target = "@gadget-client/dist-app";
+    const gadgetDir = resolve(ws.root, ".gadget", "client");
+    mkdirSync(gadgetDir, { recursive: true });
+    cpSync(resolve(FIXTURE_PATHS.packages, "gadget-dist-esm"), gadgetDir, {
+      recursive: true,
+    });
+    const detected = await detectPackageConfig(target, ws.root, {
+      entry: [".gadget/client"],
+    });
+    expect(detected.skip).not.toBe(true);
+  });
+
+  it("resolves via entry when node_modules entry is broken", async () => {
+    const target = "@gadget-client/test-app";
     const nm = resolve(ws.root, "node_modules", target);
     mkdirSync(nm, { recursive: true });
     writeFileSync(
       resolve(nm, "package.json"),
-      JSON.stringify({
-        name: target,
-        main: "./missing-entry.js",
-      }),
+      JSON.stringify({ name: target, main: "./missing-entry.js" })
     );
-    const offNm = resolve(ws.root, "generated", "client");
-    mkdirSync(offNm, { recursive: true });
-    cpSync(resolve(FIXTURE_PATHS.packages, "gadget-nested"), offNm, {
-      recursive: true,
-    });
-    writeFileSync(
-      resolve(offNm, "package.json"),
-      JSON.stringify({
-        name: target,
-        version: "1.0.0",
-        main: "./index.js",
-        types: "./index.d.ts",
-      }),
-    );
-    const detected = await detectPackageConfig(target, ws.root);
-    expect(detected.skip).not.toBe(true);
-    expect(detected.packageStructure?.layout).toBe("nested");
-    expect(detected.packageStructure?.memberDir).toBe("models");
-    expect(
-      detected.warnings?.some((w) => /bounded project search/i.test(w)),
-    ).toBe(true);
-  });
-
-  it("resolves via entry when the package is not under node_modules", async () => {
-    const target = "@gadget-client/test-app";
     const gadgetDir = resolve(ws.root, ".gadget", "client");
     mkdirSync(gadgetDir, { recursive: true });
     cpSync(resolve(FIXTURE_PATHS.packages, "gadget-nested"), gadgetDir, {
@@ -256,75 +68,19 @@ describe("detector", () => {
       entry: [".gadget/client"],
     });
     expect(detected.skip).not.toBe(true);
-    expect(detected.packageStructure?.layout).toBe("nested");
-    expect(detected.packageStructure?.memberDir).toBe("models");
   });
 
-  it("does not force nested Gadget preset when symlinked package has no models tree", async () => {
-    const realDest = resolve(
-      ws.root,
-      ".fixture-store",
-      "@gadget-client",
-      "slim-client",
-    );
-    mkdirSync(realDest, { recursive: true });
-    writeFileSync(
-      resolve(realDest, "package.json"),
-      JSON.stringify({ name: "@gadget-client/slim-client", main: "index.js" }),
-    );
-    writeFileSync(
-      resolve(realDest, "index.js"),
-      "export const api = {}; export const x = 1;",
-    );
-    writeFileSync(resolve(realDest, "a.js"), "export const a = 1;");
-    writeFileSync(resolve(realDest, "b.js"), "export const b = 1;");
-    const linkPath = resolve(ws.root, "node_modules", "@gadget-client", "slim-client");
-    mkdirSync(dirname(linkPath), { recursive: true });
-    symlinkSync(realDest, linkPath, "dir");
-    const detected = await detectPackageConfig(
-      "@gadget-client/slim-client",
-      ws.root,
-    );
-    expect(detected.packageStructure?.layout).toBe("barrel");
-  });
-
-  it("sets skip when package entry cannot be resolved after search", async () => {
-    const pkgDir = resolve(ws.root, "node_modules", "unresolvable-entry");
-    mkdirSync(pkgDir, { recursive: true });
+  it("sets skip when package entry cannot be resolved", async () => {
+    ws.installFixturePackage("gadget-nested", "@gadget-client/broken");
+    const pkgDir = resolve(ws.root, "node_modules", "@gadget-client/broken");
     writeFileSync(
       resolve(pkgDir, "package.json"),
       JSON.stringify({
-        name: "unresolvable-entry",
+        name: "@gadget-client/broken",
         main: "this-file-does-not-exist.js",
-      }),
+      })
     );
-    const detected = await detectPackageConfig("unresolvable-entry", ws.root);
+    const detected = await detectPackageConfig("@gadget-client/broken", ws.root);
     expect(detected.skip).toBe(true);
-    expect(detected.confidence).toBe("low");
-    expect(detected.warnings?.some((w) => /skipping/i.test(w))).toBe(true);
-  });
-
-  it("returns low confidence and warnings when package is not installed", async () => {
-    const detected = await detectPackageConfig("@example/missing", ws.root);
-    expect(detected.confidence).toBe("low");
-    expect(detected.warnings?.length).toBeGreaterThan(0);
-  });
-
-  it('scoreConfidence returns "high" when all inputs are defined', () => {
-    expect(
-      scoreConfidence({
-        a: 1,
-        b: "x",
-        c: true,
-        d: "y",
-        e: "z",
-      }),
-    ).toBe("high");
-  });
-
-  it('scoreConfidence returns "low" when most are missing', () => {
-    expect(
-      scoreConfidence({ a: undefined, b: null, c: "", d: undefined }),
-    ).toBe("low");
   });
 });
